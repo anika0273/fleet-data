@@ -1,37 +1,42 @@
 # data_generation/generate_data.py
 
+# Check if PostgreSQL run: pg_isready -h localhost -p 5433
+
 import random
 import pandas as pd
 from faker import Faker
 import psycopg2
 from typing import Optional
+import psycopg2.extras as extras
+from datetime import timedelta
 
 fake = Faker()
 
+"""
 def generate_gps_coordinates():
-    """Generate random GPS coordinates."""
+    \"""Generate random GPS coordinates.\"""
     lat = random.uniform(-90, 90)
     lon = random.uniform(-180, 180)
     return lat, lon
+"""
 
-def generate_fleet_data(num_records=100000):
+# NYC bounding box example (lat/lon)
+LAT_MIN, LAT_MAX = 40.4774, 40.9176
+LON_MIN, LON_MAX = -74.2591, -73.7004
+
+def generate_gps_coordinates():
+    """Generate random GPS coordinates within a region (e.g., NYC)."""
+    lat = random.uniform(LAT_MIN, LAT_MAX)
+    lon = random.uniform(LON_MIN, LON_MAX)
+    return lat, lon
+
+def generate_fleet_data(num_records=100000, fleet_size=500):
     """
-    Generate rich synthetic fleet data simulating diverse real-world scenarios.
-    
-    Args:
-        num_records (int): Number of records to generate.
-
-    Returns:
-        pd.DataFrame: Generated fleet data with contextual metadata, edge cases, and event flags.
+    Generate synthetic fleet telemetry data with realism & controlled noise.
+    fleet_size = number of unique vehicles in the dataset.
     """
 
     data = []
-
-    # Define possible categories and event probabilities
-    event_types = [
-        'normal', 'braking', 'collision', 'lane_change',
-        'harsh_acceleration', 'sensor_fault', 'network_delay', 'gps_loss'
-    ]
 
     weather_types = ['sunny', 'rainy', 'foggy', 'snowy', 'cloudy']
 
@@ -39,11 +44,24 @@ def generate_fleet_data(num_records=100000):
 
     traffic_density = ['low', 'medium', 'high']
 
+    # Pre-generate consistent vehicle IDs
+    vehicle_ids = [fake.license_plate() for _ in range(fleet_size)]
+
     for _ in range(num_records):
-        vehicle_id = fake.license_plate()
-        timestamp = fake.date_time_between(start_date='-1y', end_date='now')
+        vehicle_id = random.choice(vehicle_ids)
+        timestamp = fake.date_time_between(start_date='-30d', end_date='now') # Random timestamp within the last 30 days
+        
         lat, lon = generate_gps_coordinates()
+        
+        # Introduce missing GPS 0.5% of the time
+        if random.random() < 0.005:
+            lat, lon = None, None
+
         speed = round(random.uniform(0, 130), 2)
+
+        # Outlier: occasional unrealistic speed
+        if random.random() < 0.002:
+            speed = round(random.uniform(150, 250), 2)
 
         hour = timestamp.hour
         rush_hour = (7 <= hour <= 9) or (16 <= hour <= 18)
@@ -56,6 +74,12 @@ def generate_fleet_data(num_records=100000):
         p_sensor_fault = 0.002
         p_network_delay = 0.001
         p_gps_loss = 0.001
+
+        # Weather influence: Rain/fog increases collision/braking
+        weather = random.choice(weather_types)
+        if weather in ['rainy', 'foggy', 'snowy']:
+            p_collision *= 2
+            p_braking *= 1.5
 
         # Simulate multi-event occurrences
         events = {
@@ -79,17 +103,23 @@ def generate_fleet_data(num_records=100000):
                 event_type = evt_key.replace('_event','').replace('_alert','')
                 break
 
-        weather = random.choice(weather_types)
         road_type = random.choice(road_types)
         traffic = random.choice(traffic_density)
 
         # Add synthetic sensor metrics (simulating battery level, signal strength)
         sensor_battery = round(random.uniform(20, 100), 2)  # percentage
+        if random.random() < 0.003:  # outlier battery > 100
+            sensor_battery = round(random.uniform(101, 150), 2)
+
         sensor_signal_strength = round(random.uniform(1, 5), 2)  # arbitrary scale 1-5
 
         # Add ground truth label example: safe=1, risky=0 (dummy heuristic)
         # e.g., collisions or sensor faults mark 'risky'
-        label_risk = 0 if (events['collision_alert'] or events['sensor_fault_event']) else 1
+        label_risk = False if (events['collision_alert'] or events['sensor_fault_event']) else True
+
+        # Make some labels contradictory (dirty)
+        if random.random() < 0.002:
+            label_risk = not label_risk
 
         data.append({
             'vehicle_id': vehicle_id,
@@ -160,34 +190,24 @@ def create_table_if_not_exists(conn, table_name='fleet_data'):
     cursor.close()
 
 def save_to_postgres(df, conn, table_name='fleet_data'):
-    """Insert all rows from DataFrame into PostgreSQL."""
-
+    """Insert DataFrame into PostgreSQL quickly using execute_values."""
+    tuples = [tuple(x) for x in df.to_numpy()]
+    cols = ','.join(list(df.columns))
+    query = f"INSERT INTO {table_name}({cols}) VALUES %s"
     cursor = conn.cursor()
-    insert_sql = f"""
-    INSERT INTO {table_name} (
-        vehicle_id, timestamp, latitude, longitude, speed, event_type,
-        braking_event, collision_alert, lane_change_event, harsh_acceleration_event,
-        sensor_fault_event, network_delay_event, gps_loss_event, weather, road_type,
-        traffic_density, hour_of_day, sensor_battery, sensor_signal_strength, risk_label
-    ) VALUES (
-        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-    )
-    """
-
-    for _, row in df.iterrows():
-        cursor.execute(insert_sql, (
-            row.vehicle_id, row.timestamp, row.latitude, row.longitude, row.speed, row.event_type,
-            row.braking_event, row.collision_alert, row.lane_change_event, row.harsh_acceleration_event,
-            row.sensor_fault_event, row.network_delay_event, row.gps_loss_event, row.weather, row.road_type,
-            row.traffic_density, row.hour_of_day, row.sensor_battery, row.sensor_signal_strength, row.risk_label
-        ))
-
-    conn.commit()
-    cursor.close()
+    try:
+        extras.execute_values(cursor, query, tuples, page_size=1000)
+        conn.commit()
+        print(f"Inserted {len(df)} records into {table_name}")
+    except Exception as e:
+        print(f"Error inserting data: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
 
 def main():
-    print("Generating rich synthetic fleet data...")
-    df = generate_fleet_data(num_records=100000)  # Adjust count as needed
+    print("Generating realistic synthetic fleet data...")
+    df = generate_fleet_data(num_records=100000, fleet_size = 500)  # Adjust count as needed
     print("Generated dataset with", len(df), "records")
 
     conn = connect_to_postgres()
@@ -203,12 +223,12 @@ def main():
 
 if __name__ == "__main__":
     main()
-# This script generates synthetic fleet data and saves it to a PostgreSQL database.
-# It includes rich contextual metadata, simulates edge cases, and flags events.
-# The data can be used for testing, training, or analysis in fleet management systems.
-# Ensure PostgreSQL is running and the connection parameters are correct.
-# Adjust the number of records as needed for your use case.
-# The script uses Faker for realistic data generation and psycopg2 for database interaction.
-# Make sure to install the required packages: faker, pandas, psycopg2.
-# You can run this script directly to generate and store the data.
-# Ensure you have the necessary permissions to create tables and insert data in the PostgreSQL database.
+
+#How to Run Everything
+# -> Ensure PostgreSQL is running: pg_isready -h localhost -p 5433
+# You should see: localhost:5433 - accepting connections
+# Create the table in fleet_db: 1. Open pgAdmin, 2. Connect to fleet_db, 3. Open Query Tool, paste the SQL above, and execute.
+# Install dependencies (only once): pip install psycopg2-binary pandas faker
+# Run the Python script: python generate_data.py
+# Check the inserted data in pgAdmin
+# In pgAdmin, run: SELECT COUNT(*) FROM fleet_data;SELECT * FROM fleet_data LIMIT 10;
