@@ -4,3 +4,4 @@ fleet_venv/
 /lib/
 .DS_Store
 batch_etl/__pycache__/
+/data/
