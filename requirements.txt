@@ -1,4 +1,5 @@
 Faker==37.5.3
+kafka-python==2.2.15
 numpy==2.3.2
 pandas==2.3.1
 psycopg2-binary==2.9.10
