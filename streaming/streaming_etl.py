@@ -79,5 +79,8 @@ if __name__ == "__main__":
 # 2. Create the 'fleet-data' topic if it doesn't exist:
 # docker exec -it $(docker ps -qf "name=kafka") kafka-topics --create --topic fleet-data --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
 # 3. Start the Kafka producer to send data: python -m streaming/producer.py
-# 4. In a separate terminal, start Spark Streaming job: Run this script: spark-submit --jars lib/postgresql-42.7.3.jar streaming/streaming_etl.py 
+# 4. In a separate terminal, start Spark Streaming job: Run this script: spark-submit \
+#     --jars /Users/owner/Desktop/fleet-data/lib/postgresql-42.7.3.jar \
+#     --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0 \
+#     streaming/streaming_etl.py 
 # 5. Monitor the PostgreSQL database to see the processed data in the 'fleet_stream_processed' table.
