@@ -1,3 +1,7 @@
+# streaming/streaming_etl.py
+# Spark Structured Streaming consumes Kafka → applies schema → filters → writes to Postgres table fleet_stream_processed.
+# This script sets up a Spark session, reads streaming data from Kafka, applies transformations, and writes the results to PostgreSQL.
+
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, BooleanType, IntegerType, TimestampType

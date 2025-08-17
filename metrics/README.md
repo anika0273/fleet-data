@@ -17,3 +17,40 @@
 - Ships with unit tests, argparse CLI, and env-driven config.
 
 - This module is batch (not streaming). It’s meant to be re-run safely (hourly/daily) on top of the data the streaming ETL continuously appends.
+
+# Run metrics.py
+
+```bash
+spark-submit \
+  --jars /Users/owner/Desktop/fleet-data/lib/postgresql-42.7.3.jar \
+  metrics/metrics.py
+```
+
+# Verify Metrics in PostgreSQL
+
+```sql
+-- View recent windows
+SELECT *
+FROM telemetry_metrics_vehicle_5m
+ORDER BY window_end DESC, vehicle_id
+LIMIT 50;
+
+-- Vehicles with highest overspeed rate in last hour
+SELECT vehicle_id,
+       AVG(overspeed_rate) AS avg_overspeed_rate,
+       COUNT(*) AS windows
+FROM telemetry_metrics_vehicle_5m
+WHERE window_end > NOW() - INTERVAL '1 hour'
+GROUP BY vehicle_id
+ORDER BY avg_overspeed_rate DESC
+LIMIT 20;
+
+-- Vehicles with most GPS missing ratio today
+SELECT vehicle_id,
+       AVG(gps_missing_ratio) AS avg_gps_missing_ratio
+FROM telemetry_metrics_vehicle_5m
+WHERE window_end::date = CURRENT_DATE
+GROUP BY vehicle_id
+ORDER BY avg_gps_missing_ratio DESC
+LIMIT 20;
+```

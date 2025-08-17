@@ -1,3 +1,5 @@
+# streaming/producer.py
+# This script generates synthetic fleet data and sends it to a Kafka topic.
 from kafka import KafkaProducer   # Kafka client library for Python
 import json
 import time
