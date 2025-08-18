@@ -3,7 +3,7 @@
 # This script sets up a Spark session, reads streaming data from Kafka, applies transformations, and writes the results to PostgreSQL.
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col
+from pyspark.sql.functions import from_json, col, round as spark_round
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, BooleanType, IntegerType, TimestampType
 
 def get_spark_session():
@@ -15,11 +15,33 @@ def get_spark_session():
 def define_schema():
     return StructType([
         StructField("vehicle_id", StringType()),
+        StructField("driver_id", StringType()),
+        StructField("route_id", StringType()),
         StructField("timestamp", TimestampType()),
         StructField("latitude", DoubleType()),
         StructField("longitude", DoubleType()),
+        StructField("hour_of_day", IntegerType()),
+        StructField("weather", StringType()),
+        StructField("road_type", StringType()),
+        StructField("traffic_density", StringType()),
+        StructField("rush_hour", BooleanType()),
+        StructField("vehicle_type", StringType()),
+        StructField("vehicle_age_years", IntegerType()),
+        StructField("device_generation", IntegerType()),
+        StructField("device_cost_usd", DoubleType()),
+        StructField("driver_experience_years", IntegerType()),
+        StructField("driver_training", StringType()),
+        StructField("optimized_route_flag", BooleanType()),
         StructField("speed", DoubleType()),
-        StructField("event_type", StringType()),
+        StructField("distance_traveled_km", DoubleType()),
+        StructField("idle_time_minutes", DoubleType()),
+        StructField("fuel_consumption_liters", DoubleType()),
+        StructField("fuel_rate_l_per_100km", DoubleType()),
+        StructField("sensor_battery", DoubleType()),
+        StructField("sensor_signal_strength", DoubleType()),
+        StructField("data_latency_ms", DoubleType()),
+        StructField("gps_accuracy_meters", DoubleType()),
+        StructField("packet_loss_rate", DoubleType()),
         StructField("braking_event", BooleanType()),
         StructField("collision_alert", BooleanType()),
         StructField("lane_change_event", BooleanType()),
@@ -27,12 +49,13 @@ def define_schema():
         StructField("sensor_fault_event", BooleanType()),
         StructField("network_delay_event", BooleanType()),
         StructField("gps_loss_event", BooleanType()),
-        StructField("weather", StringType()),
-        StructField("road_type", StringType()),
-        StructField("traffic_density", StringType()),
-        StructField("hour_of_day", IntegerType()),
-        StructField("sensor_battery", DoubleType()),
-        StructField("sensor_signal_strength", DoubleType()),
+        StructField("event_type", StringType()),
+        StructField("maintenance_type", StringType()),
+        StructField("time_since_last_maintenance_days", DoubleType()),
+        StructField("breakdown_event", BooleanType()),
+        StructField("downtime_hours", DoubleType()),
+        StructField("maintenance_cost_usd", DoubleType()),
+        StructField("intervention_active", BooleanType()),
         StructField("risk_label", BooleanType())
     ])
 
@@ -54,8 +77,14 @@ def main():
     # Parse JSON and apply schema
     fleet_df = string_df.select(from_json(col("value"), schema).alias("data")).select("data.*")
 
-    # Example: Filter to events where speed > 50
-    filtered_df = fleet_df.filter(col("speed") > 50)
+    # Example transformation: Calculate fuel efficiency (L/km) for ML-ready analysis
+    fleet_df = fleet_df.withColumn(
+        "fuel_efficiency_l_per_km",
+        spark_round(col("fuel_consumption_liters") / col("distance_traveled_km"), 3)
+    )
+
+    # Example filter: keep records with realistic speed > 0
+    filtered_df = fleet_df.filter(col("speed") > 0)
 
     # PostgreSQL connection options
     pg_url = "jdbc:postgresql://localhost:5433/fleet_db"

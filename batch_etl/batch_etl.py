@@ -19,7 +19,7 @@ Why Spark?
 - Allows complex transformations and aggregations at scale.
 """
 
-from pyspark.sql.functions import col, hour, lower, count, avg
+from pyspark.sql.functions import col, hour, lower, count, avg, when, round as spark_round
 from utils import get_spark_session, get_jdbc_properties
 import time
 
@@ -28,84 +28,95 @@ import time
 # -----------------------
 def read_from_postgres(spark, table_name):
     """
-    Extract Step: Reads fleet data from PostgreSQL using JDBC.
-
-    Pushdown filtering is used so that:
-    - Rows with missing GPS (latitude/longitude) are removed at database level.
-    - Rows with missing speed are removed at database level.
-    - Only rows with realistic speeds (<= 200 km/h) are fetched.
-
-    This reduces the volume of data transferred to Spark, improving efficiency.
+    Extract fleet data from Postgres with pushdown filtering.
+    Filters applied:
+    - GPS coordinates not null & within NYC bounds: ensures only valid positions.
+    - Speed <= 160 km/h: realistic vehicle speeds.
+    - Sensor battery 0–100%: physically possible battery values.
+    - Fuel consumption and downtime positive: removes invalid data.
     """
     jdbc_conf = get_jdbc_properties()
-
-    # SQL subquery with initial filters BEFORE Spark reads the data
     query = f"""
         (SELECT * 
          FROM {table_name} 
-         WHERE latitude IS NOT NULL 
-           AND longitude IS NOT NULL 
-           AND speed IS NOT NULL 
-           AND speed <= 200) AS subquery
+         WHERE latitude IS NOT NULL AND latitude BETWEEN 40.4774 AND 40.9176
+           AND longitude IS NOT NULL AND longitude BETWEEN -74.2591 AND -73.7004
+           AND speed IS NOT NULL AND speed >= 0 AND speed <= 160
+           AND sensor_battery IS NOT NULL AND sensor_battery BETWEEN 0 AND 100
+           AND fuel_consumption_liters IS NULL OR fuel_consumption_liters > 0
+           AND downtime_hours IS NULL OR downtime_hours >= 0) AS subquery
     """
     return spark.read.jdbc(url=jdbc_conf["url"], table=query, properties=jdbc_conf["properties"])
 
 
+
 # -----------------------
-# TRANSFORM
+# TRANSFORM + FEATURE ENGINEERING
 # -----------------------
 def clean_and_transform(df):
     """
-    Transform Step: Cleans and enriches the dataset.
-
-    Transformations performed:
-    - Casts `sensor_battery` to double to ensure numeric operations work.
-    - Removes rows where battery is outside realistic bounds (0–100%).
-    - Normalizes categorical `weather` values to lowercase for consistency.
-    - Adds `hour_of_day` field from `timestamp` if not already present 
-      (useful for time-of-day analysis).
-
-    Why:
-    - Type casting ensures downstream aggregates & comparisons work without errors.
-    - Filtering out physically impossible battery/speed values reduces noise.
-    - Normalizing categories prevents splitting values like 'Sunny' vs 'sunny'.
-    - Adding derived features increases analytical flexibility.
+    Cleans and enriches dataset for ML and analytics.
+    Transformations & Business Impact:
+    - Cast numeric fields: ensures mathematical operations work.
+    - Normalize text fields (weather, road_type, traffic_density, driver_training): avoids split categories.
+    - Derived features:
+        - hour_of_day: detects time-of-day patterns affecting risk & events (driver intervention, route optimization).
+        - vehicle_age_group: categorizes vehicle age to model predictive maintenance & fuel consumption.
+        - fuel_efficiency_l_per_km: supports route optimization and fuel analysis.
+        - downtime_flag: binary target for predictive maintenance analysis.
+    - Filters negative/unrealistic fuel or downtime values.
     """
-    # Ensure correct data type for battery level
+
     df_clean = df.withColumn("sensor_battery", col("sensor_battery").cast("double"))
+    df_clean = df_clean.withColumn("speed", col("speed").cast("double"))
+    df_clean = df_clean.withColumn("fuel_consumption_liters", col("fuel_consumption_liters").cast("double"))
+    df_clean = df_clean.withColumn("downtime_hours", col("downtime_hours").cast("double"))
 
-    # Filter out physically impossible battery readings
+    # Remove physically impossible values
     df_clean = df_clean.filter((col("sensor_battery") >= 0) & (col("sensor_battery") <= 100))
+    df_clean = df_clean.filter((col("speed") >= 0) & (col("speed") <= 160))
+    df_clean = df_clean.filter((col("fuel_consumption_liters") >= 0) | col("fuel_consumption_liters").isNull())
+    df_clean = df_clean.filter((col("downtime_hours") >= 0) | col("downtime_hours").isNull())
 
-    # Normalize text fields for consistent grouping in aggregations
-    df_clean = df_clean.withColumn("weather", lower(col("weather")))
+    # Normalize categorical fields
+    for c in ["weather", "road_type", "traffic_density", "driver_training"]:
+        df_clean = df_clean.withColumn(c, lower(col(c)))
 
-    # Add derived `hour_of_day` for time-based analysis if not already present
+    # Derived feature: hour_of_day
     if "hour_of_day" not in df_clean.columns:
         df_clean = df_clean.withColumn("hour_of_day", hour(col("timestamp")))
+
+    # Derived feature: vehicle_age_group (0-3, 4-6, 7-9, 10+)
+    df_clean = df_clean.withColumn("vehicle_age_group", 
+                                   when(col("vehicle_age_years") <= 3, "0-3")
+                                   .when((col("vehicle_age_years") >=4) & (col("vehicle_age_years") <=6), "4-6")
+                                   .when((col("vehicle_age_years") >=7) & (col("vehicle_age_years") <=9), "7-9")
+                                   .otherwise("10+"))
+
+    # Derived feature: fuel efficiency (L/km)
+    df_clean = df_clean.withColumn(
+    "fuel_efficiency_l_per_km",
+    spark_round(col("fuel_consumption_liters") / col("distance_traveled_km"), 2)
+)
+
+    # Derived feature: downtime_flag (binary)
+    df_clean = df_clean.withColumn("downtime_flag", when(col("downtime_hours") > 0, 1).otherwise(0))
 
     return df_clean
 
 
 def aggregate_metrics(df):
     """
-    Transform (Aggregation) Step:
-    Generates high-level metrics from the cleaned dataset.
-
+    Aggregates metrics useful for analytics dashboards & data quality checks.
     Metrics:
-    - Event counts: Number of records per `event_type`
-    - Average speed per `event_type`
-    - Average battery level per `event_type`
-
-    Why:
-    - Helps quickly assess frequency of different event types in the dataset.
-    - Shows operational insights (e.g., which event types correlate with high/low speeds).
-    - Supports data quality monitoring through average values.
+    - Event counts and averages (speed, battery, fuel efficiency)
+    - Supports driver interventions, route optimization, and predictive maintenance insights
     """
     return df.groupBy("event_type").agg(
         count("*").alias("event_count"),
         avg("speed").alias("avg_speed"),
-        avg("sensor_battery").alias("avg_battery")
+        avg("sensor_battery").alias("avg_battery"),
+        avg("fuel_efficiency_l_per_km").alias("avg_fuel_efficiency")
     )
 
 
@@ -135,7 +146,6 @@ def write_to_parquet(df, destination_path):
     """
     df.write.mode("overwrite").parquet(destination_path)
 
-
 # -----------------------
 # MAIN ETL PIPELINE
 # -----------------------
@@ -149,25 +159,25 @@ def main():
     # 1. EXTRACT
     print("📥 Reading filtered fleet data from Postgres...")
     df_raw = read_from_postgres(spark, "fleet_data")
-    print(f"Loaded {df_raw.count()} rows after initial pushdown filtering.")
+    print(f"Loaded {df_raw.count()} rows after pushdown filtering.")
 
-    # 2. TRANSFORM
-    print("🧹 Cleaning and transforming data...")
-    df_clean = clean_and_transform(df_raw).cache()  # Cache to reuse cleaned dataset in multiple stages
+    # 2. TRANSFORM + FEATURE ENGINEERING
+    print("🧹 Cleaning, transforming, and engineering ML-ready features...")
+    df_clean = clean_and_transform(df_raw).cache()
     print(f"Rows after cleaning: {df_clean.count()}")
 
-    print("📊 Aggregating metrics...")
+    # 3. AGGREGATION
+    print("📊 Aggregating metrics for analysis...")
     metrics_df = aggregate_metrics(df_clean)
     metrics_df.show()
 
-    # 3. LOAD
-    print("💾 Writing cleaned data back to PostgreSQL and Parquet...")
+    # 4. LOAD
+    print("💾 Writing cleaned & feature-engineered data to PostgreSQL and Parquet...")
     write_to_postgres(df_clean, "fleet_data_cleaned")
     write_to_parquet(df_clean, "data/output/cleaned_fleet_data.parquet")
 
-    # Cleanup
     spark.stop()
-    print(f"✅ Batch ETL completed in {time.time() - start_time:.2f} sec")
+    print(f"✅ Batch ETL + ML-ready feature engineering completed in {time.time() - start_time:.2f} sec")
 
 
 # Entry point

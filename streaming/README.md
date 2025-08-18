@@ -70,14 +70,32 @@ Sent: {'vehicle_id': 'ABC123', 'speed': 56, ...}
 
 4.  Start the Spark Structured Streaming Consumer
 
-In a third terminal window (Terminal 3), start your streaming Spark job:
+In a third terminal window (Terminal 3), start your streaming Spark job (check if the versions are compatible here: https://mvnrepository.com/artifact/org.apache.spark/spark-sql-kafka-0-10_2.13):
 
 ```bash
 spark-submit \
-  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.1 \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.0-preview2 \
   --jars lib/postgresql-42.7.3.jar \
   streaming/streaming_etl.py
 ```
+
+But before
+
+1. Check your Spark version:
+
+```bash
+spark-submit --version
+```
+
+Green Signal: Output shows Spark version 4.0.0 or compatible with your setup
+
+2. Check Scala version used by Spark
+
+```bash
+spark-shell
+```
+
+Green signal: Scala version matches 2.13.x because Spark 4.0.0 is built for Scala 2.13. If you get 2.12 or other, choose compatible Kafka package for that version.
 
 What happens here:
 

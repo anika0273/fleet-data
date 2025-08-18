@@ -3,6 +3,14 @@
 from kafka import KafkaProducer   # Kafka client library for Python
 import json
 import time
+
+import sys
+import os
+
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from data_generation.generate_data import generate_fleet_data  # Your existing synthetic data generator
 
 # -----------------------------
@@ -38,7 +46,7 @@ def produce_stream(num_records=1000, batch_size=10, delay=1):
 
     while True:
         # Generate synthetic fleet data as a Pandas DataFrame
-        df_batch = generate_fleet_data(num_records=batch_size, fleet_size=50)
+        df_batch = generate_fleet_data(num_records=batch_size, fleet_size=50, driver_pool=40)
 
         # Iterate through each row and send to Kafka
         for _, record in df_batch.iterrows():
