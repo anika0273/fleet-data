@@ -1,0 +1,13 @@
+feature,importance
+data_latency_ms,0.11764920986327179
+speed,0.11477685853165866
+sensor_battery,0.10967745859211547
+vehicle_age_years,0.09776713669226018
+time_since_last_maintenance_days,0.09744370085548175
+idle_time_minutes,0.09165645646752452
+packet_loss_rate,0.08174305483298394
+maintenance_x_vehicle_age,0.08056511106072567
+gps_accuracy_meters,0.07990233596458658
+rush_hour,0.06158985128100119
+maintenance_type,0.050684870574778274
+device_generation,0.01654395528361207
