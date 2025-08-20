@@ -13,6 +13,7 @@ numpy==2.3.2
 packaging==25.0
 pandas==2.3.1
 pillow==11.3.0
+prometheus_client==0.22.1
 psycopg2-binary==2.9.10
 py4j==0.10.9.9
 pyarrow==21.0.0
