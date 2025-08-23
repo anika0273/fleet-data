@@ -24,9 +24,10 @@ services:
     environment:
       KAFKA_BROKER_ID: 1 # Unique ID for the Kafka broker (needed for clusters)
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181 # Tell Kafka where to find Zookeeper (service name:port)
-      KAFKA_ADVERTISED_LISTENERS:
-        PLAINTEXT://localhost:9092
-        # How Kafka tells clients to connect to it — here it's accessible via localhost:9092 from the host machine
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      # This is how Kafka advertises itself to clients (e.g., Grafana, Python apps)
+      # How Kafka tells clients to connect to it — here it's accessible via localhost:9092 from the host machine
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR:
         1
         # Replication factor for internal Kafka topics (1 means no redundancy — fine for local dev)

@@ -21,7 +21,18 @@ Why Spark?
 
 from pyspark.sql.functions import col, hour, lower, count, avg, when, round as spark_round
 from utils import get_spark_session, get_jdbc_properties
+from prometheus_client import start_http_server, Counter, Histogram, Gauge
 import time
+import traceback
+
+# -----------------------
+# Prometheus Metrics
+# -----------------------
+etl_job_duration = Histogram("fleet_batch_etl_duration_seconds", "Duration of ETL job in seconds")
+rows_read = Gauge("fleet_batch_rows_read", "Number of rows read from Postgres")
+rows_cleaned = Gauge("fleet_batch_rows_cleaned", "Number of rows after cleaning")
+etl_failures = Counter("fleet_batch_etl_failures_total", "Number of failed ETL runs")
+
 
 # -----------------------
 # EXTRACT
@@ -146,40 +157,62 @@ def write_to_parquet(df, destination_path):
     """
     df.write.mode("overwrite").parquet(destination_path)
 
+
 # -----------------------
 # MAIN ETL PIPELINE
 # -----------------------
+@etl_job_duration.time()
 def main():
-    # Initialize Spark session
-    spark = get_spark_session()
-    spark.sparkContext.setLogLevel("WARN")
+    try:
+        spark = get_spark_session()
+        spark.sparkContext.setLogLevel("WARN")
 
-    start_time = time.time()
+        # 1. EXTRACT
+        print("📥 Reading filtered fleet data from Postgres...")
+        df_raw = read_from_postgres(spark, "fleet_data")
+        rows_read.set(df_raw.count())
 
-    # 1. EXTRACT
-    print("📥 Reading filtered fleet data from Postgres...")
-    df_raw = read_from_postgres(spark, "fleet_data")
-    print(f"Loaded {df_raw.count()} rows after pushdown filtering.")
+        # 2. TRANSFORM
+        print("🧹 Cleaning & transforming data...")
+        df_clean = clean_and_transform(df_raw).cache()
+        rows_cleaned.set(df_clean.count())
 
-    # 2. TRANSFORM + FEATURE ENGINEERING
-    print("🧹 Cleaning, transforming, and engineering ML-ready features...")
-    df_clean = clean_and_transform(df_raw).cache()
-    print(f"Rows after cleaning: {df_clean.count()}")
+        # 3. AGGREGATION
+        print("📊 Aggregating metrics...")
+        metrics_df = aggregate_metrics(df_clean)
+        metrics_df.show()
 
-    # 3. AGGREGATION
-    print("📊 Aggregating metrics for analysis...")
-    metrics_df = aggregate_metrics(df_clean)
-    metrics_df.show()
+        # 4. LOAD
+        print("💾 Writing cleaned data to Postgres & Parquet...")
+        write_to_postgres(df_clean, "fleet_data_cleaned")
+        write_to_parquet(df_clean, "data/output/cleaned_fleet_data.parquet")
 
-    # 4. LOAD
-    print("💾 Writing cleaned & feature-engineered data to PostgreSQL and Parquet...")
-    write_to_postgres(df_clean, "fleet_data_cleaned")
-    write_to_parquet(df_clean, "data/output/cleaned_fleet_data.parquet")
+        spark.stop()
+        print("✅ ETL job completed successfully.")
 
-    spark.stop()
-    print(f"✅ Batch ETL + ML-ready feature engineering completed in {time.time() - start_time:.2f} sec")
+    except Exception as e:
+        etl_failures.inc()
+        traceback.print_exc()
+        raise e
 
 
-# Entry point
 if __name__ == "__main__":
+    # Start Prometheus HTTP server for metrics
+    start_http_server(8000)  # Prometheus will scrape http://localhost:8000/metrics
     main()
+
+
+"""
+What This Does:
+
+    Runs your ETL job as before.
+
+    Starts a small web server at http://localhost:8000/metrics.
+
+    Exposes metrics like (example values):
+        fleet_batch_rows_read  50000
+        fleet_batch_rows_cleaned  48000
+        fleet_batch_etl_duration_seconds  42.7
+        fleet_batch_etl_failures_total  0
+
+"""

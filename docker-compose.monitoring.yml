@@ -39,7 +39,7 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     container_name: postgres_exporter
     environment:
-      DATA_SOURCE_NAME: "postgresql://postgres:1234@host.docker.internal:5433/fleet_db?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://postgres:1234@postgres:5432/fleet_db?sslmode=disable"
     ports:
       - "9187:9187"
     restart: unless-stopped

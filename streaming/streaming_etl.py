@@ -66,7 +66,7 @@ def main():
     # Read streaming data from Kafka
     kafka_stream = spark.readStream \
         .format("kafka") \
-        .option("kafka.bootstrap.servers", "localhost:9092") \
+        .option("kafka.bootstrap.servers", "kafka:9092") \
         .option("subscribe", "fleet-data") \
         .option("startingOffsets", "earliest") \
         .load()
@@ -87,7 +87,7 @@ def main():
     filtered_df = fleet_df.filter(col("speed") > 0)
 
     # PostgreSQL connection options
-    pg_url = "jdbc:postgresql://localhost:5433/fleet_db"
+    pg_url = "jdbc:postgresql://postgres:5432/fleet_db"
     pg_properties = {
         "user": "postgres",
         "password": "1234",

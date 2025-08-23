@@ -5,3 +5,4 @@ lib/
 .DS_Store
 batch_etl/__pycache__/
 data/
+fleet-data-redesign/.gitignore

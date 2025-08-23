@@ -52,6 +52,15 @@ docker exec -it $(docker ps -qf "name=kafka") \
 
 This sets up a "mailbox" (topic) for vehicle data messages.
 
+Ypu can verify by running this:
+
+```bash
+docker exec -it $(docker ps -qf "name=kafka") kafka-topics \
+  --list \
+  --bootstrap-server localhost:9092
+
+```
+
 3.  Start the Kafka Producer
 
 Open a new terminal window (Terminal 2), activate your Python environment, navigate to project root, then run:

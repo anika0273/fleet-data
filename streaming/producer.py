@@ -40,7 +40,7 @@ def produce_stream(num_records=1000, batch_size=10, delay=1):
     """
     # Create Kafka producer instance
     producer = KafkaProducer(
-        bootstrap_servers=['localhost:9092'],  # Kafka broker address
+        bootstrap_servers=['kafka:9092'],  # Kafka broker address
         value_serializer=json_serializer       # Serialize messages as JSON
     )
 
