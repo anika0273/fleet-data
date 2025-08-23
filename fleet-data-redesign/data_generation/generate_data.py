@@ -11,6 +11,8 @@ from typing import Optional
 import psycopg2.extras as extras
 from datetime import datetime
 
+import sys
+import os
 """
 Synthetic Fleet Telemetry Generator (Realistic, Correlated, ML-Ready)
 --------------------------------------------------------------------
@@ -438,12 +440,17 @@ def generate_fleet_data(num_records: int = 100_000,
 # DB helpers
 # ------------------------------------------------------------------
 
+# Add the parent directory of the current file to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from config.config import POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+
 def connect_to_postgres(
-    host="localhost",
-    port="5433",
-    database="fleet_db",
-    user="postgres",
-    password="1234"
+    host=POSTGRES_HOST,
+    port=POSTGRES_PORT,
+    database=POSTGRES_DB,
+    user=POSTGRES_USER,
+    password=POSTGRES_PASSWORD
 ) -> Optional[psycopg2.extensions.connection]:
     """Connect to PostgreSQL."""
     try:
@@ -451,6 +458,7 @@ def connect_to_postgres(
     except Exception as e:
         print(f"Error connecting to PostgreSQL: {e}")
         return None
+
 
 
 def create_table_if_not_exists(conn, table_name='fleet_data'):
