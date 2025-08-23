@@ -1,3 +1,0 @@
-prometheus_client==0.22.1
-py4j==0.10.9.9
-pyspark==4.0.0
