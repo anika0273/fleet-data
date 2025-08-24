@@ -33,7 +33,7 @@ from pyspark.sql.functions import (
 from prometheus_client import start_http_server, Counter, Histogram, Gauge
 
 # Import helpers from the same package
-from .utils import get_spark_session, get_jdbc_properties
+from etl.batch.utils import get_spark_session, get_jdbc_properties
 
 # -----------------------
 # Prometheus Metrics

@@ -4,6 +4,13 @@ import os
 # Load .env file if present
 load_dotenv()
 
+
+# project-root relative paths
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+POSTGRES_JAR = os.path.join(PROJECT_ROOT, "lib", "postgresql-42.7.3.jar")
+
+# Database configuration (can be overridden via environment variables)
 POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'postgres')
 POSTGRES_PORT = int(os.getenv('POSTGRES_PORT', 5432))
 POSTGRES_DB = os.getenv('POSTGRES_DB', 'fleet_db')
