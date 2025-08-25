@@ -5,6 +5,7 @@ Faker==37.5.3
 fonttools==4.59.1
 greenlet==3.2.4
 joblib==1.5.1
+kafka-python==2.2.15
 kiwisolver==1.4.9
 matplotlib==3.10.5
 numpy==2.3.2
