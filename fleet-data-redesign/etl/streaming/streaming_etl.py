@@ -57,7 +57,8 @@ def create_table_if_not_exists():
         downtime_hours DOUBLE PRECISION,
         maintenance_cost_usd DOUBLE PRECISION,
         intervention_active BOOLEAN,
-        risk_label BOOLEAN
+        risk_label BOOLEAN,
+        fuel_efficiency_l_per_km DOUBLE PRECISION
     );
     """
     conn = None
@@ -136,7 +137,8 @@ def define_schema():
         StructField("downtime_hours", DoubleType()),
         StructField("maintenance_cost_usd", DoubleType()),
         StructField("intervention_active", BooleanType()),
-        StructField("risk_label", BooleanType())
+        StructField("risk_label", BooleanType()),
+        StructField("fuel_efficiency_l_per_km", DoubleType())
     ])
 
 def main():
@@ -197,3 +199,19 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Start by removing old containers and rhe postgres volume: docker compose down -v \
+# docker system prune -f
+# Build the images: docker compose build --no-cache
+# Start the services: docker compose up -d postgres kafka zookeeper
+# docker ps
+# docker compose up -d kafka-init OR do it manually: docker exec -it fleet-data-kafka \
+#  kafka-topics --create --topic fleet-data --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+# List topics to confirm: docker exec -it fleet-data-kafka kafka-topics --list --bootstrap-server kafka:9092
+#Start the producer (inside Docker): docker compose up -d producer   docker logs -f fleet-data-producer # you should see  Sent: {...} lines
+# Start the streaming ETL job: docker compose up -d streaming-etl  docker logs -f fleet-data-streaming-etl # expect to see batches like: [streaming_etl] epoch=1 rows=30... wrote 30 rows to Postgres
+
+# Check the target table in Postgres: docker exec -it fleet-data-postgres psql -U postgres -d fleet_db
+# \dt
+# select * from fleet_stream_processed limit 10;
