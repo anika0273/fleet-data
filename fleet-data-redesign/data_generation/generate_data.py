@@ -582,11 +582,6 @@ if __name__ == "__main__":
     main()
 
 
-#How to Run Everything
-# -> Ensure PostgreSQL is running: pg_isready -h localhost -p 5433
-# You should see: localhost:5433 - accepting connections
-# Create the table in fleet_db: 1. Open pgAdmin, 2. Connect to fleet_db, 3. Open Query Tool, paste the SQL above, and execute.
-# Install dependencies (only once): pip install psycopg2-binary pandas faker
-# Run the Python script: python data_geneation/generate_data.py
-# Check the inserted data in pgAdmin
-# In pgAdmin, run: SELECT COUNT(*) FROM fleet_data;SELECT * FROM fleet_data LIMIT 10;
+# How to Run Everything:
+# docker compose up -d data_generator
+# docker-compose run --rm data_generator python data_generation/generate_data.py
