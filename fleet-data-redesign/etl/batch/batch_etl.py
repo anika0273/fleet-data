@@ -234,3 +234,7 @@ if __name__ == "__main__":
     # Exposed on port 8001 (matches prometheus.yml scrape config)
     start_http_server(8001)
     main()
+
+
+# docker compose up -d batch_etl 
+# docker compose run --rm batch_etl python -m etl.batch.batch_etl
