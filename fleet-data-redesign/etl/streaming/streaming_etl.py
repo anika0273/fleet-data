@@ -215,3 +215,8 @@ if __name__ == "__main__":
 # Check the target table in Postgres: docker exec -it fleet-data-postgres psql -U postgres -d fleet_db
 # \dt
 # select * from fleet_stream_processed limit 10;
+
+
+# To monitor start the grafana and prometheus container: docker compose up -d grafana prometheus
+# Access Grafana at http://localhost:3000 (admin/admin)
+# Add Prometheus data source: http://localhost:9090/query
