@@ -220,3 +220,12 @@ if __name__ == "__main__":
 # To monitor start the grafana and prometheus container: docker compose up -d grafana prometheus
 # Access Grafana at http://localhost:3000 (admin/admin)
 # Add Prometheus data source: http://localhost:9090/query
+
+# in Grafana UI Create a new datasource:
+# Name: Prometheus
+# URL: http://prometheus:9090
+# Save & Test
+
+#
+# In prometheus UI: http://localhost:9090/targets you should see the streaming_etl job as UP
+
