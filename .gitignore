@@ -1,0 +1,22 @@
+# Virtual environment directories
+venv/
+fleet_venv/
+lib/
+.DS_Store
+batch_etl/__pycache__/
+data/
+fleet-data-redesign/.gitignore
+analysis/
+batch_etl/
+data_generation/
+device_comparison_outputs/
+driver_analysis_outputs/
+feedback_system_outputs/
+predictive_maintenance_outputs/
+route_analysis_outputs/
+monitoring/
+streaming/
+docker-compose.kafka.yml
+docker-compose.yml
+docker-compose.monitoring.yml
+test.sql
