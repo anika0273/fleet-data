@@ -25,7 +25,8 @@ Data Source:
 - Features already engineered in ETL (fuel efficiency, downtime flag, etc.)
 """
 
-import os
+import os, sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))  # enable project-root imports
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine
@@ -37,12 +38,14 @@ from sklearn.metrics import roc_auc_score, classification_report
 # -----------------------------
 # PostgreSQL Connection
 # -----------------------------
+from config import config
+
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "database": "fleet_db",
-    "user": "postgres",
-    "password": "1234"
+    "host": config.POSTGRES_HOST,
+    "port": config.POSTGRES_PORT,
+    "database": config.POSTGRES_DB,
+    "user": config.POSTGRES_USER,
+    "password": config.POSTGRES_PASSWORD
 }
 
 def get_connection():
@@ -62,6 +65,8 @@ def load_data(table: str = "fleet_data_cleaned") -> pd.DataFrame:
     print(f"[INFO] Loaded {len(df)} rows from {table}")
     return df
 
+OUTPUT_DIR = os.path.join(config.PROJECT_ROOT, "outputs", "driver_behavior")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # -----------------------------
 # A/B Testing & Hypothesis Test
@@ -159,7 +164,7 @@ def train_driver_risk_model(df: pd.DataFrame) -> pd.DataFrame:
 # -----------------------------
 # Save Results
 # -----------------------------
-def save_outputs(ab_results: pd.DataFrame, ml_results: pd.DataFrame, folder_name="driver_analysis_outputs"):
+def save_outputs(ab_results: pd.DataFrame, ml_results: pd.DataFrame, folder_name=OUTPUT_DIR):
     """
     Save all outputs (CSV, Parquet, PostgreSQL)
     """
@@ -188,7 +193,7 @@ import seaborn as sns
 # -----------------------------
 # Visualization / Reporting
 # -----------------------------
-def plot_intervention_effect(df: pd.DataFrame, ab_results: pd.DataFrame, ml_results: pd.DataFrame, folder_name="driver_analysis_outputs"):
+def plot_intervention_effect(df: pd.DataFrame, ab_results: pd.DataFrame, ml_results: pd.DataFrame, folder_name=OUTPUT_DIR):
     """
     Generate visualizations for:
     1. Distribution of risky events

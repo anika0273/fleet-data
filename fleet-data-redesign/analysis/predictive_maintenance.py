@@ -57,7 +57,9 @@ $ python predictive_maintenance.py
 
 """
 
-import os
+import os,sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -91,16 +93,19 @@ import seaborn as sns
 # ----------------------------
 # Config: PostgreSQL
 # ----------------------------
+from config import config
+
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "database": "fleet_db",
-    "user": "postgres",
-    "password": "1234"
+    "host": config.POSTGRES_HOST,
+    "port": config.POSTGRES_PORT,
+    "database": config.POSTGRES_DB,
+    "user": config.POSTGRES_USER,
+    "password": config.POSTGRES_PASSWORD
 }
 
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "predictive_maintenance_outputs")
+OUTPUT_DIR = os.path.join(config.PROJECT_ROOT, "outputs", "predictive_maintenance")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+# ----------------------------
 
 def get_connection():
     """Create PostgreSQL SQLAlchemy engine"""

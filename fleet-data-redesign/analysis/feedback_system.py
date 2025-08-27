@@ -75,9 +75,10 @@ $ python feedback_system.py
 
 """
 
-import os
+import os, sys
 import warnings
 warnings.filterwarnings("ignore")
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
 import pandas as pd
@@ -100,18 +101,21 @@ import seaborn as sns
 # ==================================
 # Config: PostgreSQL + Output paths
 # ==================================
+
+from config import config
+
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "database": "fleet_db",
-    "user": "postgres",
-    "password": "1234"
+    "host": config.POSTGRES_HOST,
+    "port": config.POSTGRES_PORT,
+    "database": config.POSTGRES_DB,
+    "user": config.POSTGRES_USER,
+    "password": config.POSTGRES_PASSWORD
 }
 
 # analysis_outputs at repo root (sibling to analysis/)
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)),
-                          "analysis_outputs", "feedback_system")
+OUTPUT_DIR = os.path.join(config.PROJECT_ROOT, "outputs", "feedback_system")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+# =============================
 
 def get_connection():
     """Create a SQLAlchemy engine using your existing DSN style."""
@@ -537,7 +541,7 @@ def main():
     print("- Uplift model ranks drivers by expected reduction in harsh events when feedback is ON.")
     print("  Use 'fb_uplift_by_driver' to target the top deciles first (highest ROI).")
 
-    print(f"\n[INFO] All outputs written to: {OUTPUT_DIR}")
+    print(f"[INFO] All outputs written to: {OUTPUT_DIR}")
     print("[INFO] ✅ Feedback system analysis complete")
 
 if __name__ == "__main__":

@@ -76,10 +76,11 @@ Saved under: fleet-data/analysis_outputs/device_comparison/
 
 How to Run
 ----------
-$ python device_comparison.py
+docker compose up postgres
+docker compose up device_comparison_analysis
 """
 
-import os
+import os, sys
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -103,19 +104,23 @@ import seaborn as sns
 # =============================
 # Config
 # =============================
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))  # enable project-root imports
+
+from config import config  # now you can use config.POSTGRES_HOST, etc.
+
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "database": "fleet_db",
-    "user": "postgres",
-    "password": "1234"
+    "host": config.POSTGRES_HOST,
+    "port": config.POSTGRES_PORT,
+    "database": config.POSTGRES_DB,
+    "user": config.POSTGRES_USER,
+    "password": config.POSTGRES_PASSWORD,
 }
 
 # Threshold that defines "new device"
 NEW_DEVICE_THRESHOLD = 2  # device_generation >= 2 → New; 0/1 → Old (adjust as needed)
 
-# Output directory at repo root (sibling to analysis/)
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "device_comparison_outputs")
+# Output folder
+OUTPUT_DIR = os.path.join(config.PROJECT_ROOT, "outputs", "device_comparison")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # =============================
