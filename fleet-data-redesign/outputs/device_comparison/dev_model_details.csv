@@ -1,0 +1,2 @@
+fuel_mae_old,fuel_mae_new,fuel_r2_old,fuel_r2_new,break_auc_old,break_auc_new,break_logloss_old,break_logloss_new,algo
+0.2881193329622087,0.2833273255800108,0.9986346050121955,0.9984327055672276,0.6018109370547506,0.5706307724074673,0.04277780643343237,0.0476720653052564,"T-Learner (RF Regressor on fuel, RF Classifier on breakdown)"

@@ -27,7 +27,8 @@ Techniques / Approach:
    - Feature importance / regression coefficients.
 """
 
-import os
+import os, sys
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -44,12 +45,14 @@ from sqlalchemy import create_engine
 # ----------------------------
 # Config: PostgreSQL
 # ----------------------------
+from config import config
+
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5433,
-    "database": "fleet_db",
-    "user": "postgres",
-    "password": "1234"
+    "host": config.POSTGRES_HOST,
+    "port": config.POSTGRES_PORT,
+    "database": config.POSTGRES_DB,
+    "user": config.POSTGRES_USER,
+    "password": config.POSTGRES_PASSWORD
 }
 
 def get_connection():
@@ -249,12 +252,14 @@ def plot_route_analysis(predictions: pd.DataFrame, feature_importance: pd.DataFr
 # -------------------------------
 # Save outputs
 # -------------------------------
-def save_outputs(predictions, feature_importance, folder_name="route_analysis_outputs"):
-    os.makedirs(folder_name, exist_ok=True)
-    predictions.to_csv(os.path.join(folder_name, "predicted_fuel.csv"), index=False)
-    predictions.to_parquet(os.path.join(folder_name, "predicted_fuel.parquet"), index=False)
-    feature_importance.to_csv(os.path.join(folder_name, "feature_importance.csv"), index=False)
-    print(f"[INFO] Outputs saved to '{folder_name}'.")
+OUTPUT_DIR = os.path.join(config.PROJECT_ROOT, "outputs", "route_optimization")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def save_outputs(predictions, feature_importance):
+    predictions.to_csv(os.path.join(OUTPUT_DIR, "predicted_fuel.csv"), index=False)
+    predictions.to_parquet(os.path.join(OUTPUT_DIR, "predicted_fuel.parquet"), index=False)
+    feature_importance.to_csv(os.path.join(OUTPUT_DIR, "feature_importance.csv"), index=False)
+    print(f"[INFO] Outputs saved to '{OUTPUT_DIR}'.")
 
 # -------------------------------
 # Main Script

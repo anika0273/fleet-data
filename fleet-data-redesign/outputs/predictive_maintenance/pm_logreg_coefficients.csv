@@ -1,0 +1,13 @@
+feature,coef
+maintenance_type,-2.775380525817213
+rush_hour,-1.8548375623245739
+device_generation,-0.8976393254415153
+packet_loss_rate,-0.24881224444071248
+maintenance_x_vehicle_age,0.19960901693991187
+gps_accuracy_meters,-0.05766520052358244
+idle_time_minutes,0.03185909137561235
+vehicle_age_years,0.021624556585651166
+time_since_last_maintenance_days,-0.01084358773134503
+data_latency_ms,-0.005409363828351348
+speed,0.0006030063848638457
+sensor_battery,-0.0005083173093410992

@@ -1,0 +1,14 @@
+feature,importance
+distance_traveled_km,0.6111709167698189
+vehicle_type_truck,0.3422103081769878
+fuel_per_km,0.040949744871538823
+vehicle_type_van,0.005058781057503718
+idle_time_minutes,0.00044240353259937634
+fuel_efficiency_l_per_km,0.00010332826476773838
+speed,1.601724427107513e-05
+hour_of_day,1.2236881719938624e-05
+vehicle_age_years,1.1033178394593667e-05
+idle_ratio,1.0306183059629335e-05
+day_of_week,7.506271934794624e-06
+optimized_x_experience,5.4524945331363e-06
+optimized_route_flag,1.965072870581065e-06
