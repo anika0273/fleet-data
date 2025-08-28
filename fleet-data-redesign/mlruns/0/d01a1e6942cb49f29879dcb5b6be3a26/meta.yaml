@@ -1,0 +1,14 @@
+artifact_uri: mlflow-artifacts:/0/d01a1e6942cb49f29879dcb5b6be3a26/artifacts
+end_time: 1756257780346
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: d01a1e6942cb49f29879dcb5b6be3a26
+run_name: secretive-rat-377
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1756257780267
+status: 4
+tags: []
+user_id: owner
