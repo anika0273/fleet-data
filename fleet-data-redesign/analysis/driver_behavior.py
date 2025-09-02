@@ -29,7 +29,8 @@ import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))  # enable project-root imports
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine
+# from sqlalchemy import create_engine
+import psycopg2
 from scipy import stats
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
@@ -48,20 +49,39 @@ DB_CONFIG = {
     "password": config.POSTGRES_PASSWORD
 }
 
+"""
 def get_connection():
-    """Return SQLAlchemy engine connected to PostgreSQL"""
+    \"""Return SQLAlchemy engine connected to PostgreSQL\"""
     url = f"postgresql+psycopg2://{DB_CONFIG['user']}:{DB_CONFIG['password']}@" \
           f"{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
     return create_engine(url)
 
 
 def load_data(table: str = "fleet_data_cleaned") -> pd.DataFrame:
-    """
+    \"""
     Load the cleaned fleet data from PostgreSQL.
     This is the starting point for all analysis.
-    """
+    \"""
     engine = get_connection()
     df = pd.read_sql(f"SELECT * FROM {table};", engine)
+    print(f"[INFO] Loaded {len(df)} rows from {table}")
+    return df
+"""
+
+def get_connection():
+    """Return a psycopg2 connection."""
+    return psycopg2.connect(
+        host=DB_CONFIG['host'],
+        port=DB_CONFIG['port'],
+        dbname=DB_CONFIG['database'],
+        user=DB_CONFIG['user'],
+        password=DB_CONFIG['password']
+    )
+
+def load_data(table: str = "fleet_data_cleaned") -> pd.DataFrame:
+    """Load a table from PostgreSQL into a Pandas DataFrame."""
+    with get_connection() as conn:  # auto-commit handled by context manager
+        df = pd.read_sql(f"SELECT * FROM {table};", conn)
     print(f"[INFO] Loaded {len(df)} rows from {table}")
     return df
 
@@ -164,6 +184,40 @@ def train_driver_risk_model(df: pd.DataFrame) -> pd.DataFrame:
 # -----------------------------
 # Save Results
 # -----------------------------
+def save_df_to_postgres(df: pd.DataFrame, table_name: str):
+    """Save a DataFrame to PostgreSQL using psycopg2, overwriting the table."""
+    if df.empty:
+        print(f"[WARN] DataFrame is empty, nothing to save for table '{table_name}'")
+        return
+
+    # Quote column names to handle reserved keywords
+    quoted_columns = [f'"{col}"' for col in df.columns]
+
+    # Build CREATE TABLE statement dynamically
+    columns_defs = ", ".join([f'{col} TEXT' for col in quoted_columns])
+
+    # Build INSERT query placeholders
+    cols = ", ".join(quoted_columns)
+    vals_placeholders = ", ".join(["%s"] * len(df.columns))
+    insert_query = f"INSERT INTO {table_name} ({cols}) VALUES ({vals_placeholders})"
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Drop table if exists
+            cur.execute(f'DROP TABLE IF EXISTS "{table_name}";')
+
+            # Create table
+            cur.execute(f'CREATE TABLE "{table_name}" ({columns_defs});')
+
+            # Insert rows in batches
+            cur.executemany(insert_query, df.values.tolist())
+
+        conn.commit()
+
+    print(f"[INFO] Saved {len(df)} rows to table '{table_name}' (overwritten)")
+
+
+
 def save_outputs(ab_results: pd.DataFrame, ml_results: pd.DataFrame, folder_name=OUTPUT_DIR):
     """
     Save all outputs (CSV, Parquet, PostgreSQL)
@@ -178,10 +232,9 @@ def save_outputs(ab_results: pd.DataFrame, ml_results: pd.DataFrame, folder_name
     ab_results.to_parquet(os.path.join(folder_name, "ab_test_results.parquet"), index=False)
     ml_results.to_parquet(os.path.join(folder_name, "driver_risk_predictions.parquet"), index=False)
 
-    # PostgreSQL
-    engine = get_connection()
-    ab_results.to_sql("ab_test_results", engine, if_exists="replace", index=False)
-    ml_results.to_sql("driver_risk_predictions", engine, if_exists="replace", index=False)
+    # PostgreSQL using psycopg2
+    save_df_to_postgres(ab_results, "ab_test_results")
+    save_df_to_postgres(ml_results, "driver_risk_predictions")
 
     print(f"[INFO] Saved results to folder '{folder_name}' and PostgreSQL.")
 

@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: fleet_db
+      POSTGRES_DB: fleet_db # just default, we’ll create fleet_db + airflow via script
     ports:
       - "5434:5432" # host:container (avoid conflict with local pg)
     volumes:
@@ -204,7 +204,7 @@ services:
   device_comparison_analysis:
     build: .
     container_name: fleet-data-device_comparison-analysis
-    command: python /app/analysis/device_comparison.py
+    command: tail -f /dev/null #python /app/analysis/device_comparison.py
     volumes:
       - ./analysis:/app/analysis
       - ./config:/app/config
@@ -223,7 +223,7 @@ services:
   driver_behavior_analysis:
     build: .
     container_name: fleet-data-driver_behavior-analysis
-    command: python /app/analysis/driver_behavior.py
+    command: tail -f /dev/null #python /app/analysis/driver_behavior.py
     volumes:
       - ./analysis:/app/analysis
       - ./config:/app/config
@@ -297,7 +297,7 @@ services:
       - fleetnet
 
   airflow-init:
-    build: .
+    image: apache/airflow:2.9.0
     container_name: fleet-data-airflow-init
     entrypoint: /bin/bash
     command:
@@ -327,7 +327,7 @@ services:
       - fleetnet
 
   airflow-webserver:
-    build: .
+    image: apache/airflow:2.9.0
     container_name: fleet-data-airflow-webserver
     command: webserver
     restart: always
@@ -355,7 +355,7 @@ services:
       - fleetnet
 
   airflow-scheduler:
-    build: .
+    image: apache/airflow:2.9.0
     container_name: fleet-data-airflow-scheduler
     command: ["airflow", "scheduler"]
     restart: always
@@ -402,6 +402,9 @@ volumes:
 # docker compose up -d postgres kafka zookeeper kafka-init data_generator
 # Then run the generator script manually:
 # docker compose run --rm data_generator python data_generation/generate_data.py
+# Check the table in Postgres: docker exec -it fleet-data-postgres psql -U postgres -d fleet_db
+# \dt
+# select * from fleet_raw_data limit 10;
 
 # Note: To run just the batch ETL (for manual runs):
 # docker compose up -d postgres
