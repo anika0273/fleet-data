@@ -1,0 +1,475 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: fleet-data-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: fleet_db
+    ports:
+      - "5434:5432" # host:container (avoid conflict with local pg)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-multiple-db.sh:/docker-entrypoint-initdb.d/init-multiple-db.sh # to have airflow database present in the same pg instance
+    networks:
+      - fleetnet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fleet_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.4
+    container_name: fleet-data-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - fleetnet
+    healthcheck:
+      test: ["CMD", "echo", "ruok", "|", "nc", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.4
+    container_name: fleet-data-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Internal + external listeners
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - fleetnet
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "kafka-broker-api-versions",
+          "--bootstrap-server",
+          "localhost:9092",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  producer:
+    build: .
+    container_name: fleet-data-producer
+    command: python /app/etl/streaming/producer.py
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_BROKERS: kafka:9092
+    volumes:
+      - ./etl:/app/etl
+      - ./data_generation:/app/data_generation
+      - ./config:/app/config
+    networks:
+      - fleetnet
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.4.4
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint:
+      [
+        "sh",
+        "-c",
+        "sleep 20 && kafka-topics --create --topic fleet-data --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 || true",
+      ]
+    networks:
+      - fleetnet
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: fleet-data-prometheus
+    depends_on:
+      - postgres
+      - postgres_exporter
+    volumes:
+      - ./data_monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - fleetnet
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: fleet-data-grafana
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+    volumes:
+      - ./data_monitoring/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./data_monitoring/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    networks:
+      - fleetnet
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: fleet-data-postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:1234@postgres:5432/fleet_db?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      - postgres
+    networks:
+      - fleetnet
+
+  data_generator:
+    build: .
+    container_name: fleet-data-generator
+    depends_on:
+      - kafka
+      - postgres
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - fleetnet
+
+  batch_etl:
+    build: .
+    container_name: fleet-data-batch-etl
+    command: tail -f /dev/null # keep container running for debugging
+    volumes:
+      - ./etl:/app/etl
+      - ./config:/app/config
+      - ./lib:/app/lib
+      - ./data/output:/app/data/output
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - fleetnet
+
+  streaming_etl:
+    build: .
+    container_name: fleet-data-streaming-etl
+    command: >
+      spark-submit
+      --packages org.apache.spark:spark-sql-kafka-0-10_2.13:3.4.1
+      --jars /app/lib/postgresql-42.7.3.jar
+      /app/etl/streaming/streaming_etl.py
+    volumes:
+      - ./etl:/app/etl
+      - ./lib:/app/lib
+      - ./config:/app/config
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: fleet_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "1234"
+      KAFKA_BROKERS: kafka:9092
+      POSTGRES_JAR: /app/lib/postgresql-42.7.3.jar
+    depends_on:
+      - kafka
+      - postgres
+    networks:
+      - fleetnet
+
+  device_comparison_analysis:
+    build: .
+    container_name: fleet-data-device_comparison-analysis
+    command: python /app/analysis/device_comparison.py
+    volumes:
+      - ./analysis:/app/analysis
+      - ./config:/app/config
+      - ./outputs:/app/outputs
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fleet_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    networks:
+      - fleetnet
+
+  driver_behavior_analysis:
+    build: .
+    container_name: fleet-data-driver_behavior-analysis
+    command: python /app/analysis/driver_behavior.py
+    volumes:
+      - ./analysis:/app/analysis
+      - ./config:/app/config
+      - ./outputs:/app/outputs
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fleet_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    networks:
+      - fleetnet
+
+  feedback_system_analysis:
+    build: .
+    container_name: fleet-data-feedback_system-analysis
+    command: python /app/analysis/feedback_system.py
+    volumes:
+      - ./analysis:/app/analysis
+      - ./config:/app/config
+      - ./outputs:/app/outputs
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fleet_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    networks:
+      - fleetnet
+
+  predictive_maintenance_analysis:
+    build: .
+    container_name: fleet-data-predictive_maintenance-analysis
+    command: python /app/analysis/predictive_maintenance.py
+    volumes:
+      - ./analysis:/app/analysis
+      - ./config:/app/config
+      - ./outputs:/app/outputs
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fleet_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    networks:
+      - fleetnet
+
+  route_optimization_analysis:
+    build: .
+    container_name: fleet-data-route_optimization-analysis
+    command: python /app/analysis/route_optimization.py
+    volumes:
+      - ./analysis:/app/analysis
+      - ./config:/app/config
+      - ./outputs:/app/outputs
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: fleet_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    networks:
+      - fleetnet
+
+  airflow-init:
+    build: .
+    container_name: fleet-data-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db init &&
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com
+    environment:
+      PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI=" # generate a secure one for prod: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:1234@postgres:5432/airflow
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./.env:/opt/airflow/.env
+      - ./etl:/opt/airflow/etl
+      - ./config:/opt/airflow/config
+      - ./requirements.txt:/requirements.txt
+    depends_on:
+      - postgres
+    networks:
+      - fleetnet
+
+  airflow-webserver:
+    build: .
+    container_name: fleet-data-airflow-webserver
+    command: webserver
+    restart: always
+    ports:
+      - "8080:8080" # host:container
+    environment:
+      PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:1234@postgres:5432/airflow
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./.env:/opt/airflow/.env
+      - ./etl:/opt/airflow/etl
+      - ./config:/opt/airflow/config
+      - ./requirements.txt:/requirements.txt
+    depends_on:
+      - airflow-init
+    networks:
+      - fleetnet
+
+  airflow-scheduler:
+    build: .
+    container_name: fleet-data-airflow-scheduler
+    command: ["airflow", "scheduler"]
+    restart: always
+    environment:
+      PYTHONPATH: /opt/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:1234@postgres:5432/airflow
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./etl:/opt/airflow/etl
+      - ./.env:/opt/airflow/.env
+      - ./config:/opt/airflow/config
+      - ./requirements.txt:/requirements.txt
+    depends_on:
+      - airflow-webserver
+    networks:
+      - fleetnet
+
+networks:
+  fleetnet:
+
+volumes:
+  pgdata:
+# Note: To run the entire system:
+# 1. Start PostgreSQL: docker compose up -d postgres
+# 2. Start Kafka and Zookeeper: docker compose up -d zookeeper kafka kafka-init
+# 3. Start Data Generator: docker compose up -d data_generator
+# 4. Start Streaming ETL: docker compose up -d streaming_etl
+# 5. (Optional) Start Batch ETL for manual runs: docker compose up -d batch_etl
+# 6. Start Prometheus and Grafana: docker compose up -d prometheus grafana
+# 7. Run Device Comparison Analysis: docker compose up device_comparison_analysis
+# 8. Access Grafana at http://localhost:3000 (admin/admin)
+# 9. Access Prometheus at http://localhost:9090
+# 10. Access PostgreSQL at localhost:5434 (user: postgres, password: 1234, db: fleet_db)
+# 11. To stop everything: docker compose down
+
+# Note: To run just the data generator:
+# docker compose up -d postgres kafka zookeeper kafka-init data_generator
+# Then run the generator script manually:
+# docker compose run --rm data_generator python data_generation/generate_data.py
+
+# Note: To run just the batch ETL (for manual runs):
+# docker compose up -d postgres
+# docker compose up -d batch_etl
+# Then run the ETL script manually:
+# docker compose run --rm batch_etl python -m etl.batch.batch_etl
+
+# Note: To run just the streaming ETL:
+# docker compose up -d postgres kafka zookeeper
+# docker compose up -d kafka-init OR Create the kafka topic it manually: docker exec -it fleet-data-kafka  kafka-topics --create --topic fleet-data --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1
+# Start the producer (inside Docker): docker compose up -d producer   -> # docker logs -f fleet-data-producer # you should see  Sent: {...} lines
+# Start the streaming ETL job: docker compose up -d streaming_etl  docker logs -f fleet-data-streaming-etl # expect to see batches like: [streaming_etl] epoch=1 rows=30... wrote 30 rows to Postgres
+# Check the target table in Postgres: docker exec -it fleet-data-postgres psql -U postgres -d fleet_db
+# \dt
+# select * from fleet_stream_processed limit 10;
+
+# Note: To run just the device comparison analysis:
+# docker compose up -d postgres
+# Then run the analysis script manually:
+# docker compose run --rm device_comparison_analysis python analysis/device_comparison.py
+
+# Note: To run just the driver behavior analysis:
+# docker compose up -d postgres
+# Then run the analysis script manually:
+# docker compose run --rm driver_behavior_analysis python analysis/driver_behavior.py
+
+# Note: To run just the feedback system analysis:
+# docker compose up -d postgres
+# Then run the analysis script manually:
+# docker compose run --rm feedback_system_analysis python analysis/feedback_system.py
+
+# Note: To run just the predictive maintenance analysis:
+# docker compose up -d postgres
+# Then run the analysis script manually:
+# docker compose run --rm predictive_maintenance_analysis python analysis/predictive_maintenance.py
+
+# Note: To run just the route optimization analysis:
+# docker compose up -d postgres
+# Then run the analysis script manually:
+# docker compose run --rm route_optimization_analysis python analysis/route_optimization.py
+
+# Note: To view logs of a specific service:
+# docker logs -f <container_name>
+# Example: docker logs -f fleet-data-postgres
+# To stop and remove all containers, networks, and volumes defined in this file:
+# docker compose down -v
+
+# ----------------------------
+# airflow setup notes:
+# ----------------------------
+# 1. Initialize the Airflow database and create an admin user:
+# docker compose up airflow-init
+# 2. Start the Airflow webserver and scheduler:
+# docker compose up -d airflow-webserver airflow-scheduler
+# 3. Access the Airflow web UI at http://localhost:8080 (login with admin/admin)
+# 4. To stop Airflow services:
+# docker compose down
+# ----------------------------
+
+# Restarting note: If you change DAG files, you may need to restart the webserver and scheduler for changes to take effect:
+# docker compose restart airflow-webserver airflow-scheduler
+
+# Stop and remove all existing containers, networks, and volumes:
+# docker compose down  docker volume rm fleet-data-redesign_pgdata # check all the volumes: docker volume ls
+# Then rebuild and start all services:
+# docker compose up --build -d
+# run the airflow db init:
+# docker-compose run --rm airflow-init
+# Start the webserver and scheduler:
+# docker compose up -d airflow-webserver airflow-scheduler
+# Access Airflow UI at http://localhost:8080 (admin/admin)
