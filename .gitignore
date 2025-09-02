@@ -17,7 +17,6 @@ route_analysis_outputs/
 monitoring/
 streaming/
 docker-compose.kafka.yml
-docker-compose.yml
 docker-compose.monitoring.yml
 test.sql
 requirements.txt
