@@ -83,6 +83,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import numpy as np
 import pandas as pd
 
+import psycopg2
+
 from sqlalchemy import create_engine
 from scipy import stats
 
@@ -117,19 +119,66 @@ OUTPUT_DIR = os.path.join(config.PROJECT_ROOT, "outputs", "feedback_system")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 # =============================
 
+"""
 def get_connection():
-    """Create a SQLAlchemy engine using your existing DSN style."""
+    \"""Create a SQLAlchemy engine using your existing DSN style.\"""
     url = f"postgresql+psycopg2://{DB_CONFIG['user']}:{DB_CONFIG['password']}@" \
           f"{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
     return create_engine(url)
 
+def load_data(table: str = "fleet_data_cleaned") -> pd.DataFrame:
+    \"""Load cleaned fleet dataset from PostgreSQL.\"""
+    engine = get_connection()
+    return pd.read_sql(f"SELECT * FROM {table};", engine)
+
+def df_to_postgres(df: pd.DataFrame, table_name: str, if_exists="replace"):
+    \"""Write a DataFrame to PostgreSQL (replace by default).\"""
+    eng = get_connection()
+    df.to_sql(table_name, eng, index=False, if_exists=if_exists)
+"""
+def get_connection():
+    """Return a psycopg2 connection."""
+    return psycopg2.connect(
+        host=DB_CONFIG['host'],
+        port=DB_CONFIG['port'],
+        dbname=DB_CONFIG['database'],
+        user=DB_CONFIG['user'],
+        password=DB_CONFIG['password']
+    )
 # =============================
 # Load Data
 # =============================
 def load_data(table: str = "fleet_data_cleaned") -> pd.DataFrame:
-    """Load cleaned fleet dataset from PostgreSQL."""
-    engine = get_connection()
-    return pd.read_sql(f"SELECT * FROM {table};", engine)
+    """Load a table from PostgreSQL into a Pandas DataFrame."""
+    with get_connection() as conn:  # auto-commit handled by context manager
+        df = pd.read_sql(f"SELECT * FROM {table};", conn)
+    return df
+
+def df_to_postgres(df: pd.DataFrame, table_name: str, if_exists="replace"):
+    """
+    Write a DataFrame to PostgreSQL using only psycopg2.
+    - if_exists: 'replace' → drops existing table; 'append' → add rows
+    """
+    # Convert column names to safe SQL identifiers
+    cols = list(df.columns)
+    col_str = ", ".join([f'"{c}"' for c in cols])
+    placeholders = ", ".join(["%s"] * len(cols))
+    
+    with get_connection() as conn:
+        cur = conn.cursor()
+        if if_exists == "replace":
+            cur.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+            # Create table dynamically with all columns as text (simplest)
+            create_cols = ", ".join([f'"{c}" TEXT' for c in cols])
+            cur.execute(f'CREATE TABLE "{table_name}" ({create_cols})')
+        
+        # Insert data using executemany
+        cur.executemany(
+            f'INSERT INTO "{table_name}" ({col_str}) VALUES ({placeholders})',
+            df.astype(str).values.tolist()
+        )
+        conn.commit()
+        cur.close()
 
 # =============================
 # Utilities (IO)
@@ -139,10 +188,6 @@ def df_to_files(df: pd.DataFrame, name: str):
     df.to_csv(os.path.join(OUTPUT_DIR, f"{name}.csv"), index=False)
     df.to_parquet(os.path.join(OUTPUT_DIR, f"{name}.parquet"), index=False)
 
-def df_to_postgres(df: pd.DataFrame, table_name: str, if_exists="replace"):
-    """Write a DataFrame to PostgreSQL (replace by default)."""
-    eng = get_connection()
-    df.to_sql(table_name, eng, index=False, if_exists=if_exists)
 
 # =============================
 # A/B Testing (Descriptive + HT)

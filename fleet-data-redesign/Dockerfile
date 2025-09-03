@@ -1,9 +1,15 @@
 FROM python:3.11-slim
 
 # Install Java, wget, unzip
-RUN apt-get update && \
-    apt-get install -y default-jdk wget unzip libgomp1 && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    libffi-dev \
+    libssl-dev \
+    wget \
+    unzip \
+    default-jdk \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set JAVA_HOME for PySpark
 ENV JAVA_HOME=/usr/lib/jvm/default-java
@@ -16,8 +22,8 @@ RUN apt-get update && apt-get install -y libgomp1
 
 # Install Python dependencies
 COPY requirements.txt .
+RUN pip3 install --upgrade pip
 RUN pip3 install --no-cache-dir -r requirements.txt
-RUN pip3 install --no-cache-dir pyspark
 
 # Copy project code
 COPY etl ./etl

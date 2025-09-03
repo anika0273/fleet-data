@@ -1,22 +1,18 @@
 # dags/daily_batch_etl.py
 """
 Airflow DAG: Daily Batch ETL
-Runs your Spark-based batch ETL (etl/batch/batch_etl.py) and validates results.
-
-Flow:
-1. Run Spark ETL (Extract → Transform → Load).
-2. Run quality checks on fleet_data_cleaned table in Postgres.
+Runs Spark batch ETL and validates results in Postgres.
 """
 
 from datetime import datetime, timedelta
-
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from subprocess import run
 
 # Import your ETL entrypoint
 # Important: path must be on PYTHONPATH via docker-compose volume mount
-from etl.batch.batch_etl import main as batch_etl_main
+# from etl.batch.batch_etl import main as batch_etl_main
 
 DEFAULT_ARGS = {
     "owner": "fleet_team",
@@ -27,31 +23,33 @@ DEFAULT_ARGS = {
     "retry_delay": timedelta(minutes=5),
 }
 
+# ------------------------
+# Spark ETL
+# ------------------------
+def run_spark_etl(**context):
+    """
+    Call spark-submit on your batch ETL script.
+    """
+    result = run([
+        "/opt/spark/bin/spark-submit",
+        "/opt/airflow/etl/batch/batch_etl.py",
+        "--master", "spark://spark-master:7077",
+    ])
+    if result.returncode != 0:
+        raise RuntimeError("Spark job failed")
 
 # ------------------------
-# Tasks
+# Data Quality Checks
 # ------------------------
-def run_batch_etl(**context):
-    """
-    Kick off Spark ETL job (batch_etl.main()).
-    """
-    # Could pass execution_date if you partition parquet by date
-    batch_etl_main()
-
-
 def quality_checks(**context):
-    """
-    Post-load validation on fleet_data_cleaned in Postgres.
-    Ensures job didn’t silently fail and data is usable.
-    """
     hook = PostgresHook(postgres_conn_id="postgres_fleet")
 
-    # 1) Ensure rows landed
+    # Ensure rows landed
     row_cnt = hook.get_first("SELECT COUNT(*) FROM fleet_data_cleaned;")[0]
     if row_cnt < 100:
         raise ValueError(f"Row count too low: {row_cnt}")
 
-    # 2) No negative values
+    # No negative values
     bad_vals = hook.get_first("""
         SELECT COUNT(*) FROM fleet_data_cleaned
         WHERE distance_traveled_km < 0
@@ -61,7 +59,7 @@ def quality_checks(**context):
     if bad_vals > 0:
         raise ValueError(f"Found {bad_vals} rows with invalid negative values.")
 
-    # 3) Required columns are not NULL
+    # Required columns not NULL
     nulls = hook.get_first("""
         SELECT COUNT(*) FROM fleet_data_cleaned
         WHERE vehicle_id IS NULL OR timestamp IS NULL
@@ -69,7 +67,7 @@ def quality_checks(**context):
     if nulls > 0:
         raise ValueError(f"Found {nulls} rows missing critical keys.")
 
-    # 4) Freshness check — did we load data today?
+    # Freshness check
     today_rows = hook.get_first("""
         SELECT COUNT(*) FROM fleet_data_cleaned
         WHERE DATE(timestamp) = CURRENT_DATE
@@ -78,7 +76,6 @@ def quality_checks(**context):
         raise ValueError("No rows landed for today → possible upstream issue.")
 
     print(f"✅ Quality checks passed: {row_cnt} rows, {bad_vals} bad, {nulls} nulls.")
-
 
 # ------------------------
 # DAG Definition
@@ -95,7 +92,7 @@ with DAG(
 
     etl = PythonOperator(
         task_id="run_batch_etl",
-        python_callable=run_batch_etl,
+        python_callable=run_spark_etl,
         provide_context=True,
     )
 
@@ -108,11 +105,5 @@ with DAG(
     etl >> dq
 
 
-# run `docker compose up --build -d` to start all services including Airflow
-# Access Airflow UI at http://localhost:8080 (admin/admin)  
-# To initialize the Airflow database, run:
-# docker-compose run --rm airflow-init
-# Start the webserver and scheduler:
-# docker compose up -d airflow-webserver airflow-scheduler  
-# To stop all services, run:
-# docker compose down
+
+
