@@ -1,2 +1,2 @@
 segment_auc_control,segment_auc_treated,segment_logloss_control,segment_logloss_treated,algo
-0.613163056645609,0.6120840035649073,0.20051218652221298,0.13082716114945606,T-Learner (RandomForest)
+0.5664728828015252,0.5300642017255509,0.21620256549955338,0.13830082775556868,T-Learner (RandomForest)

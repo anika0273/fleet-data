@@ -31,6 +31,7 @@ import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 import pandas as pd
 import numpy as np
+import psycopg2
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
@@ -55,19 +56,35 @@ DB_CONFIG = {
     "password": config.POSTGRES_PASSWORD
 }
 
+"""
 def get_connection():
-    """Create PostgreSQL connection string for SQLAlchemy/Pandas."""
+    \"""Create PostgreSQL connection string for SQLAlchemy/Pandas.\"""
     url = f"postgresql+psycopg2://{DB_CONFIG['user']}:{DB_CONFIG['password']}@" \
           f"{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
     return create_engine(url)
 
 def load_data(table: str = "fleet_data_cleaned") -> pd.DataFrame:
-    """Load fleet dataset from PostgreSQL into Pandas."""
+    \"""Load fleet dataset from PostgreSQL into Pandas.\"""
     engine = get_connection()
     query = f"SELECT * FROM {table};"
     df = pd.read_sql(query, engine)
     return df
+"""
+def get_connection():
+    """Return a psycopg2 connection."""
+    return psycopg2.connect(
+        host=DB_CONFIG['host'],
+        port=DB_CONFIG['port'],
+        dbname=DB_CONFIG['database'],
+        user=DB_CONFIG['user'],
+        password=DB_CONFIG['password']
+    )
 
+def load_data(table: str = "fleet_data_cleaned") -> pd.DataFrame:
+    """Load a table from PostgreSQL into a Pandas DataFrame."""
+    with get_connection() as conn:  # auto-commit handled by context manager
+        df = pd.read_sql(f"SELECT * FROM {table};", conn)
+    return df
 
 # -------------------------------
 # Feature Engineering

@@ -296,6 +296,27 @@ services:
     networks:
       - fleetnet
 
+  # -----------------------
+  # Airflow DB
+  # -----------------------
+  airflow-db:
+    image: postgres:14
+    container_name: airflow-db
+    restart: always
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow_db
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432" # avoid conflict with fleet_db
+    networks:
+      - fleetnet
+
+  # -----------------------
+  # Airflow Init (DB + Admin User)
+  # -----------------------
   airflow-init:
     image: apache/airflow:2.9.0
     container_name: fleet-data-airflow-init
@@ -308,52 +329,46 @@ services:
     environment:
       PYTHONPATH: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI=" # generate a secure one for prod: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:1234@postgres:5432/airflow
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./.env:/opt/airflow/.env
       - ./etl:/opt/airflow/etl
       - ./config:/opt/airflow/config
       - ./requirements.txt:/requirements.txt
     depends_on:
-      - postgres
+      - airflow-db
     networks:
       - fleetnet
 
+  # -----------------------
+  # Airflow Webserver
+  # -----------------------
   airflow-webserver:
     image: apache/airflow:2.9.0
     container_name: fleet-data-airflow-webserver
     command: webserver
     restart: always
     ports:
-      - "8080:8080" # host:container
+      - "8080:8080"
     environment:
       PYTHONPATH: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:1234@postgres:5432/airflow
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
     volumes:
       - ./dags:/opt/airflow/dags
-      - ./.env:/opt/airflow/.env
       - ./etl:/opt/airflow/etl
       - ./config:/opt/airflow/config
       - ./requirements.txt:/requirements.txt
     depends_on:
-      - airflow-init
+      - airflow-db
     networks:
       - fleetnet
 
+  # -----------------------
+  # Airflow Scheduler
+  # -----------------------
   airflow-scheduler:
     image: apache/airflow:2.9.0
     container_name: fleet-data-airflow-scheduler
@@ -363,20 +378,54 @@ services:
       PYTHONPATH: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:1234@postgres:5432/airflow
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
     volumes:
       - ./dags:/opt/airflow/dags
       - ./etl:/opt/airflow/etl
-      - ./.env:/opt/airflow/.env
       - ./config:/opt/airflow/config
       - ./requirements.txt:/requirements.txt
     depends_on:
-      - airflow-webserver
+      - airflow-db
+    networks:
+      - fleetnet
+
+  # -----------------------
+  # Spark Master
+  # -----------------------
+  spark-master:
+    image: bitnami/spark:latest
+    container_name: spark-master
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+    ports:
+      - "7077:7077" # Spark master
+      - "8083:8080" # Spark master UI inside container is 8080
+    volumes:
+      - ./spark:/opt/spark/work-dir
+    networks:
+      - fleetnet
+
+  # -----------------------
+  # Spark Worker
+  # -----------------------
+  spark-worker:
+    image: bitnami/spark:latest
+    container_name: spark-worker
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_WORKER_MEMORY: 1G
+      SPARK_WORKER_CORES: 1
+    depends_on:
+      - spark-master
+    ports:
+      - "8082:8081" # Spark Worker UI
+    volumes:
+      - ./spark:/opt/spark/work-dir
     networks:
       - fleetnet
 
@@ -385,6 +434,8 @@ networks:
 
 volumes:
   pgdata:
+  airflow_db_data:
+# ----------------------------
 # Note: To run the entire system:
 # 1. Start PostgreSQL: docker compose up -d postgres
 # 2. Start Kafka and Zookeeper: docker compose up -d zookeeper kafka kafka-init
@@ -456,10 +507,12 @@ volumes:
 # airflow setup notes:
 # ----------------------------
 # 1. Initialize the Airflow database and create an admin user:
+# docker compose down -v  # wipes networks and volumes if you want a clean start
+# docker compose up airflow-db -d
 # docker compose up airflow-init
 # 2. Start the Airflow webserver and scheduler:
-# docker compose up -d airflow-webserver airflow-scheduler
-# 3. Access the Airflow web UI at http://localhost:8080 (login with admin/admin)
+# docker compose up -d airflow-webserver airflow-scheduler spark-master spark-worker
+# 3. Access the Airflow web UI at http://localhost:8080 (login with admin/admin), http://localhost:8082/ (Spark Worker UI), http://localhost:8083/ (Spark Master UI)
 # 4. To stop Airflow services:
 # docker compose down
 # ----------------------------
