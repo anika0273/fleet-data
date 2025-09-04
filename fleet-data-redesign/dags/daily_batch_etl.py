@@ -1,11 +1,15 @@
 # dags/daily_batch_etl.py
 """
-Airflow DAG: Daily Batch ETL
-Runs Spark batch ETL and validates results in Postgres.
+DAG daily_batch_etl.py has two tasks:
+1. run_batch_etl → calls your Spark job (batch_etl.py) via spark-submit.
+2. data_quality_checks → runs SQL checks on the cleaned table in PostgreSQL.
+
+Notes: ETL first then DQ checks is a common pattern.
 """
 
 from datetime import datetime, timedelta
 from airflow import DAG
+from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from subprocess import run
@@ -28,15 +32,26 @@ DEFAULT_ARGS = {
 # ------------------------
 def run_spark_etl(**context):
     """
-    Call spark-submit on your batch ETL script.
+    Call spark-submit on your batch ETL script and log output.
     """
-    result = run([
-        "/opt/spark/bin/spark-submit",
-        "/opt/airflow/etl/batch/batch_etl.py",
-        "--master", "spark://spark-master:7077",
-    ])
+    result = run(
+        [
+            "/opt/spark/bin/spark-submit",
+            "--master", "spark://spark-master:7077",
+            "/opt/airflow/etl/batch/batch_etl.py",
+        ],
+        capture_output=True,  # capture stdout and stderr
+        text=True             # decode bytes → string
+    )
+
+    print("----- Spark STDOUT -----")
+    print(result.stdout)
+    print("----- Spark STDERR -----")
+    print(result.stderr)
+
     if result.returncode != 0:
-        raise RuntimeError("Spark job failed")
+        raise RuntimeError(f"Spark job failed → exit code {result.returncode}")
+
 
 # ------------------------
 # Data Quality Checks

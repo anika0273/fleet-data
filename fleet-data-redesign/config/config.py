@@ -1,3 +1,5 @@
+# config/config.py
+# Configuration settings for the ETL pipeline and services.
 from dotenv import load_dotenv
 import os
 
