@@ -330,6 +330,7 @@ services:
       PYTHONPATH: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
+      AIRFLOW__WEBSERVER__SECRET_KEY: "a3954430c09bc55cf1bcdf9e22879d23bc8172d72ecab05b99f68df2b502f0dd" # Run in your Mac terminal: openssl rand -hex 32
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
     volumes:
       - ./dags:/opt/airflow/dags
@@ -355,6 +356,7 @@ services:
       PYTHONPATH: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
+      AIRFLOW__WEBSERVER__SECRET_KEY: "a3954430c09bc55cf1bcdf9e22879d23bc8172d72ecab05b99f68df2b502f0dd" # Run in your Mac terminal: openssl rand -hex 32
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
     volumes:
       - ./dags:/opt/airflow/dags
@@ -378,6 +380,7 @@ services:
       PYTHONPATH: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
+      AIRFLOW__WEBSERVER__SECRET_KEY: "a3954430c09bc55cf1bcdf9e22879d23bc8172d72ecab05b99f68df2b502f0dd" # Run in your Mac terminal: openssl rand -hex 32
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
     volumes:
       - ./dags:/opt/airflow/dags
@@ -508,8 +511,9 @@ volumes:
 # ----------------------------
 # 1. Initialize the Airflow database and create an admin user:
 # docker compose down -v  # wipes networks and volumes if you want a clean start
-# docker compose up airflow-db -d
-# docker compose up airflow-init
+# docker compose build
+# docker compose up -d
+# docker compose run --rm airflow-init
 # 2. Start the Airflow webserver and scheduler:
 # docker compose up -d airflow-webserver airflow-scheduler spark-master spark-worker
 # 3. Access the Airflow web UI at http://localhost:8080 (login with admin/admin), http://localhost:8082/ (Spark Worker UI), http://localhost:8083/ (Spark Master UI)
