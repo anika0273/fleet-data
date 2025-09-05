@@ -318,7 +318,9 @@ services:
   # Airflow Init (DB + Admin User)
   # -----------------------
   airflow-init:
-    image: apache/airflow:2.9.0
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: fleet-data-airflow-init
     entrypoint: /bin/bash
     command:
@@ -336,6 +338,7 @@ services:
       - ./dags:/opt/airflow/dags
       - ./etl:/opt/airflow/etl
       - ./config:/opt/airflow/config
+      - ./lib:/opt/airflow/lib
       - ./requirements.txt:/requirements.txt
     depends_on:
       - airflow-db
@@ -346,7 +349,9 @@ services:
   # Airflow Webserver
   # -----------------------
   airflow-webserver:
-    image: apache/airflow:2.9.0
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: fleet-data-airflow-webserver
     command: webserver
     restart: always
@@ -362,7 +367,9 @@ services:
       - ./dags:/opt/airflow/dags
       - ./etl:/opt/airflow/etl
       - ./config:/opt/airflow/config
+      - ./lib:/opt/airflow/lib
       - ./requirements.txt:/requirements.txt
+
     depends_on:
       - airflow-db
     networks:
@@ -372,7 +379,9 @@ services:
   # Airflow Scheduler
   # -----------------------
   airflow-scheduler:
-    image: apache/airflow:2.9.0
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     container_name: fleet-data-airflow-scheduler
     command: ["airflow", "scheduler"]
     restart: always
@@ -386,7 +395,9 @@ services:
       - ./dags:/opt/airflow/dags
       - ./etl:/opt/airflow/etl
       - ./config:/opt/airflow/config
+      - ./lib:/opt/airflow/lib
       - ./requirements.txt:/requirements.txt
+
     depends_on:
       - airflow-db
     networks:
@@ -396,7 +407,7 @@ services:
   # Spark Master
   # -----------------------
   spark-master:
-    image: bitnami/spark:latest
+    image: bitnami/spark:3.5.6
     container_name: spark-master
     environment:
       SPARK_MODE: master
@@ -416,7 +427,7 @@ services:
   # Spark Worker
   # -----------------------
   spark-worker:
-    image: bitnami/spark:latest
+    image: bitnami/spark:3.5.6
     container_name: spark-worker
     environment:
       SPARK_MODE: worker
