@@ -38,6 +38,7 @@ def run_spark_etl(**context):
         [
             "/opt/spark/bin/spark-submit",
             "--master", "spark://spark-master:7077",
+            "--jars", "/opt/airflow/lib/postgresql-42.7.3.jar",
             "/opt/airflow/etl/batch/batch_etl.py",
         ],
         capture_output=True,  # capture stdout and stderr
