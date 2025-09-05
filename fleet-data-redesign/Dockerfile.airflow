@@ -32,3 +32,6 @@ RUN mkdir -p /opt/spark && \
     rm /tmp/spark.tgz
 
 USER airflow
+
+
+# No CMD here, as we will run specific scripts using docker-compose
