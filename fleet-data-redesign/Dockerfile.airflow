@@ -1,37 +1,29 @@
+# Use official Airflow base image
 FROM apache/airflow:2.9.0
 
-# Install Java + Spark dependencies
+# Switch to root to install system dependencies
 USER root
-RUN apt-get update && apt-get install -y \
-    default-jdk \
-    wget \
-    tar \
-    unzip \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
 
-# Set JAVA_HOME
+# Install system packages including JDK needed for Spark
+RUN apt-get update && apt-get install -y default-jdk wget tar unzip build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+
+# Set JAVA_HOME and update PATH for Spark binaries
 ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
-ENV PATH="$JAVA_HOME/bin:$PATH:/opt/spark/bin"
+ENV PATH="$JAVA_HOME/bin:/opt/spark/bin:$PATH"
 
-# Install Python dependencies
-COPY requirements.txt /requirements.txt
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r /requirements.txt
-
-# Copy project code
-COPY etl /opt/airflow/etl
-COPY dags /opt/airflow/dags
-COPY config /opt/airflow/config
-COPY lib /opt/airflow/lib
-
-# Install Spark
+# Download and install Spark
 RUN mkdir -p /opt/spark && \
     wget https://dlcdn.apache.org/spark/spark-3.5.6/spark-3.5.6-bin-hadoop3.tgz -O /tmp/spark.tgz && \
     tar -xzf /tmp/spark.tgz --strip-components=1 -C /opt/spark && \
-    rm /tmp/spark.tgz
+    rm /tmp/spark.tgz && \
+    chown -R airflow:root /opt/spark
 
+# Switch back to airflow user (default in base image)
 USER airflow
 
+# Copy Python requirements and install them
+COPY requirements-airflow.txt /requirements-airflow.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r /requirements-airflow.txt
 
-# No CMD here, as we will run specific scripts using docker-compose
+# Build Docker Airflow Image: DOCKER_BUILDKIT=1 docker build --no-cache -t fleet-data-airflow -f Dockerfile.airflow .
+# Test Airflow CLI: docker run --rm -it fleet-data-airflow airflow version
