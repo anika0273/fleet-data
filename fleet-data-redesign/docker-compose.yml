@@ -322,24 +322,21 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: fleet-data-airflow-init
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        airflow db init &&
-        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com
+    command: ["airflow", "db", "init"]
     environment:
-      PYTHONPATH: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
-      AIRFLOW__WEBSERVER__SECRET_KEY: "a3954430c09bc55cf1bcdf9e22879d23bc8172d72ecab05b99f68df2b502f0dd" # Run in your Mac terminal: openssl rand -hex 32
+      AIRFLOW__WEBSERVER__SECRET_KEY: "a3954430c09bc55cf1bcdf9e22879d23bc8172d72ecab05b99f68df2b502f0dd"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
+    env_file:
+      - ./.env
     volumes:
       - ./dags:/opt/airflow/dags
+      - ./data_generation:/opt/airflow/data_generation
       - ./etl:/opt/airflow/etl
       - ./config:/opt/airflow/config
       - ./lib:/opt/airflow/lib
-      - ./requirements.txt:/requirements.txt
+      - ./requirements-airflow.txt:/requirements-airflow.txt
     depends_on:
       - airflow-db
     networks:
@@ -353,22 +350,24 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: fleet-data-airflow-webserver
-    command: webserver
+    command: ["airflow", "webserver"]
     restart: always
     ports:
       - "8080:8080"
     environment:
-      PYTHONPATH: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
       AIRFLOW__WEBSERVER__SECRET_KEY: "a3954430c09bc55cf1bcdf9e22879d23bc8172d72ecab05b99f68df2b502f0dd" # Run in your Mac terminal: openssl rand -hex 32
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
+    env_file:
+      - ./.env
     volumes:
       - ./dags:/opt/airflow/dags
+      - ./data_generation:/opt/airflow/data_generation
       - ./etl:/opt/airflow/etl
       - ./config:/opt/airflow/config
       - ./lib:/opt/airflow/lib
-      - ./requirements.txt:/requirements.txt
+      - ./requirements-airflow.txt:/requirements-airflow.txt
 
     depends_on:
       - airflow-db
@@ -386,17 +385,19 @@ services:
     command: ["airflow", "scheduler"]
     restart: always
     environment:
-      PYTHONPATH: /opt/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: "Z-3dNGiLWNWSWUbPA8Sg0PBZCekBrZ-INAmRwHNaXJI="
       AIRFLOW__WEBSERVER__SECRET_KEY: "a3954430c09bc55cf1bcdf9e22879d23bc8172d72ecab05b99f68df2b502f0dd" # Run in your Mac terminal: openssl rand -hex 32
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow_db
+    env_file:
+      - ./.env
     volumes:
       - ./dags:/opt/airflow/dags
+      - ./data_generation:/opt/airflow/data_generation
       - ./etl:/opt/airflow/etl
       - ./config:/opt/airflow/config
       - ./lib:/opt/airflow/lib
-      - ./requirements.txt:/requirements.txt
+      - ./requirements-airflow.txt:/requirements-airflow.txt
 
     depends_on:
       - airflow-db
@@ -522,11 +523,17 @@ volumes:
 # ----------------------------
 # 1. Initialize the Airflow database and create an admin user:
 # docker compose down -v  # wipes networks and volumes if you want a clean start
-# docker compose build
-# docker compose up -d
-# docker compose run --rm airflow-init
+# Build the Dockerfile.airflow Image
+# docker compose up airflow-init
 # 2. Start the Airflow webserver and scheduler:
-# docker compose up -d airflow-webserver airflow-scheduler spark-master spark-worker
+# docker compose up -d airflow-webserver airflow-scheduler
+# docker exec -it fleet-data-airflow-webserver airflow users create
+#  --username admin \
+#  --firstname Admin \
+#  --lastname User \
+#  --role Admin \
+#  --email admin@example.com \
+# --password admin
 # 3. Access the Airflow web UI at http://localhost:8080 (login with admin/admin), http://localhost:8082/ (Spark Worker UI), http://localhost:8083/ (Spark Master UI)
 # 4. To stop Airflow services:
 # docker compose down
