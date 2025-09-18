@@ -140,7 +140,7 @@ services:
     networks:
       - fleetnet
 
-  data_generator:
+  data_generator: # docker compose build data_generator-> if you make any code changes
     build: .
     container_name: fleet-data-generator
     depends_on:
@@ -471,6 +471,13 @@ volumes:
 # Check the table in Postgres: docker exec -it fleet-data-postgres psql -U postgres -d fleet_db
 # \dt
 # select * from fleet_raw_data limit 10;
+# Check number of columns to verify schema: (should be 66 columns)
+# SELECT COUNT(*) AS number_of_columns
+# FROM information_schema.columns
+# WHERE table_name = 'fleet_data'
+# AND table_schema = 'public';
+
+# Stop and remove all containers: docker-compose down --volumes
 
 # Note: To run just the batch ETL (for manual runs):
 # docker compose up -d postgres

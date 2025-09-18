@@ -175,3 +175,127 @@ CREATE INDEX idx_timestamp ON fleet_data(timestamp);
 - Stream data instead of batch inserts.
 
 - Add maintenance logs, fuel use, driver IDs.
+
+## Requirements
+
+- **Python** ≥ 3.8
+- **PostgreSQL** ≥ 12
+- **pgAdmin** (optional GUI)
+
+Python libraries:
+
+```bash
+pip install psycopg2-binary pandas faker
+```
+
+# Database Setup
+
+## 1. Verify PostgreSQL
+
+```bash
+pg_isready -h localhost -p 5433
+```
+
+## 2. Create Database
+
+```bash
+CREATE DATABASE fleet_db;
+```
+
+## 1. Create Table
+
+```sql
+CREATE TABLE fleet_data (
+    vehicle_id VARCHAR(20),
+    timestamp TIMESTAMP,
+    latitude FLOAT,
+    longitude FLOAT,
+    speed FLOAT,
+    event_type VARCHAR(30),
+    braking_event BOOLEAN,
+    collision_alert BOOLEAN,
+    lane_change_event BOOLEAN,
+    harsh_acceleration_event BOOLEAN,
+    sensor_fault_event BOOLEAN,
+    network_delay_event BOOLEAN,
+    gps_loss_event BOOLEAN,
+    weather VARCHAR(20),
+    road_type VARCHAR(20),
+    traffic_density VARCHAR(20),
+    hour_of_day SMALLINT,
+    sensor_battery FLOAT,
+    sensor_signal_strength FLOAT,
+    risk_label BOOLEAN,
+    etc..
+);
+```
+
+## Script Configuration
+
+Update database credentials in `connect_to_postgres()`:
+
+```python
+host = "localhost"
+port = "5433"
+database = "fleet_db"
+user = "postgres"
+password = "1234"
+```
+
+## Running the Script
+
+```bash
+python generate_data.py
+```
+
+### Flow:
+
+1. Generate num_records synthetic entries.
+2. Create/verify fleet_data table.
+3. Bulk insert into PostgreSQL via execute_values.
+
+## VerifyingData Load
+
+```sql
+SELECT COUNT(*) FROM fleet_data;
+SELECT * FROM fleet_data LIMIT 10;
+```
+
+### Check for:
+
+- NYC coordinates
+- Repeated vehicle IDs
+- Random NULLs/outliers
+- Variety in event flags
+
+## Performance Notes
+
+- **100k rows** load in seconds with batch inserts.
+- Optional indexing:
+
+```sql
+CREATE INDEX idx_vehicle_id ON fleet_data(vehicle_id);
+CREATE INDEX idx_timestamp ON fleet_data(timestamp);
+```
+
+## Why these probabilities?
+
+- Collision: Rare (0.5%), matching real-world frequency.
+
+- Braking: Higher during rush hours, per traffic data.
+
+- Outliers: <1%, enough for anomaly detection testing.
+
+- Weather effects: Bad weather ~doubles collision/braking.
+
+- Fleet size: 500 vehicles for variety + repeated history.
+
+## Possible Data Extension
+
+- Change GPS bounding box for other cities.
+
+- Adjust fleet_size / num_records.
+
+- Stream data instead of batch inserts.
+
+- Add maintenance logs, fuel use, driver IDs.
