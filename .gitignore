@@ -8,7 +8,6 @@ data/
 fleet-data-redesign/.gitignore
 analysis/
 batch_etl/
-data_generation/
 device_comparison_outputs/
 driver_analysis_outputs/
 feedback_system_outputs/
