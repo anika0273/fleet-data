@@ -7,33 +7,13 @@ import math
 import pandas as pd
 from faker import Faker
 import psycopg2
-from typing import Optional
 import psycopg2.extras as extras
-from datetime import datetime
+from typing import Optional
+from datetime import datetime, timedelta
 
 import sys
 import os
-"""
-Synthetic Fleet Telemetry Generator (Realistic, Correlated, ML-Ready)
---------------------------------------------------------------------
-Covers 5 portfolio analyses:
-1) Driver interventions (training/alerts) → risky events
-2) Route optimization → fuel consumption
-3) Predictive maintenance → downtime
-4) Real-time feedback → harsh events & wear
-5) Device generation → reliability & data quality
 
-Design choices:
-- Hierarchical entities (vehicle, driver, trip/route) with stable attributes per entity.
-- Correlated probabilities (weather/traffic/rush hour worsen events; training/feedback reduce them).
-- Fuel model combines distance + idle burn; route optimization reduces distance & idle.
-- Predictive maintenance reduces breakdown/downtime & cost.
-- Newer devices improve GPS accuracy, latency, packet loss; fewer network issues.
-- Inject light noise, rare nulls, and controlled outliers for realism.
-
-Notes on labels:
-- `risk_label` is a BOOLEAN where True = SAFE, False = RISKY (collision/sensor fault/breakdown). A tiny label noise is injected.
-"""
 
 fake = Faker()
 
@@ -53,6 +33,34 @@ def generate_gps_coordinates():
     return round(lat, 6), round(lon, 6)
 
 
+
+# ------------------------------------------------------------------
+# Generate Supply Chain Context
+# ------------------------------------------------------------------
+def generate_supply_chain_context(rng):
+    carriers = ["CarrierA", "CarrierB", "CarrierC", "CarrierD"]
+    warehouses = ["NYC-East", "NJ-North", "PA-Philly", "CT-Hartford"]
+    supplier_regions = ["China", "Mexico", "US-Midwest", "Germany", "India"]
+    carrier = rng.choice(carriers)
+    origin = rng.choice(warehouses)
+    destination = rng.choice([w for w in warehouses if w != origin])
+    supplier_id = f"SPL{rng.randint(1, 200)}"
+    supplier_region = rng.choice(supplier_regions)
+    carrier_service = rng.choice(["Standard", "Expedited", "WhiteGlove"])
+    return carrier, origin, destination, supplier_id, supplier_region, carrier_service
+
+
+def generate_delay_events(rng, hour, weather, traffic):
+    customs_flag = rng.random() < 0.04
+    customs_dur = rng.randint(20, 480) if customs_flag else 0
+    weather_flag = (weather in ["snowy", "rainy", "foggy"]) and rng.random() < 0.15
+    weather_dur = rng.randint(10, 120) if weather_flag else 0
+    traffic_flag = (traffic == "high") and rng.random() < 0.30
+    traffic_dur = rng.randint(5, 90) if traffic_flag else 0
+    loading_flag = (hour in range(7, 12) or hour in range(16, 19)) and rng.random() < 0.18
+    loading_dur = rng.randint(6, 45) if loading_flag else 0
+    return customs_flag, customs_dur, weather_flag, weather_dur, traffic_flag, traffic_dur, loading_flag, loading_dur
+
 # ------------------------------------------------------------------
 # Core generator
 # ------------------------------------------------------------------
@@ -60,20 +68,9 @@ def generate_gps_coordinates():
 def generate_fleet_data(num_records: int = 100_000,
                          fleet_size: int = 500,
                          driver_pool: int = 400):
-    """
-    Generate synthetic fleet telemetry with realistic correlations and enough signal for ML.
-
-    Row = one trip snapshot / record (not every second). Each record has:
-      - Vehicle features (type, age, device gen, maintenance type)
-      - Driver features (experience, training)
-      - Route context (road, traffic, weather, rush hour, optimization flag)
-      - Events (braking, harsh accel, collision, lane change, device/network issues)
-      - KPIs (distance, idle, fuel consumption, downtime, maintenance cost)
-
-    Returns: pandas.DataFrame
-    """
 
     rng = random.Random(42)  # deterministic-ish reproducibility
+    fake.seed_instance(42)
 
     # ---------------- Vehicle master data (stable per vehicle) ----------------
     vehicle_types = ["car", "van", "truck"]
@@ -287,9 +284,20 @@ def generate_fleet_data(num_records: int = 100_000,
 
         # Priority event type
         event_type = 'normal'
-        for key in ['collision_alert', 'sensor_fault_event', 'gps_loss_event', 'network_delay_event',
-                    'harsh_acceleration_event', 'braking_event', 'lane_change_event']:
-            pass
+        events_dict = {
+            'collision_alert': collision_alert,
+            'sensor_fault_event': sensor_fault_event,
+            'gps_loss_event': gps_loss_event,
+            'network_delay_event': network_delay_event,
+            'harsh_acceleration_event': harsh_accel,
+            'braking_event': braking_event,
+            'lane_change_event': lane_change_event
+        }
+        for k in ['collision_alert','sensor_fault_event','gps_loss_event','network_delay_event',
+                  'harsh_acceleration_event','braking_event','lane_change_event']:
+            if events_dict[k]:
+                event_type = k.replace('_event','').replace('_alert','')
+                break
         # We'll compute after we set booleans
 
         # Device metrics
@@ -334,22 +342,6 @@ def generate_fleet_data(num_records: int = 100_000,
             cost += rng.uniform(500, 3000)
         maintenance_cost_usd = round(cost * rng.uniform(0.95, 1.05), 2)
 
-        # Determine event_type priority now that booleans are known
-        events_dict = {
-            'collision_alert': collision_alert,
-            'sensor_fault_event': sensor_fault_event,
-            'gps_loss_event': gps_loss_event,
-            'network_delay_event': network_delay_event,
-            'harsh_acceleration_event': harsh_accel,
-            'braking_event': braking_event,
-            'lane_change_event': lane_change_event
-        }
-        for k in ['collision_alert','sensor_fault_event','gps_loss_event','network_delay_event',
-                  'harsh_acceleration_event','braking_event','lane_change_event']:
-            if events_dict[k]:
-                event_type = k.replace('_event','').replace('_alert','')
-                break
-
         # risk label: safe unless collision/sensor fault/breakdown. Small label noise (1%).
         risk_label = not (collision_alert or sensor_fault_event or breakdown_event)
         if rng.random() < 0.01:
@@ -366,6 +358,28 @@ def generate_fleet_data(num_records: int = 100_000,
             fuel_consumed_record = fuel_consumed
             rate_record = rate_l_per_100
 
+        
+        # SUPPLY CHAIN section
+        carrier, origin, dest, supplier_id, supplier_region, carrier_service = generate_supply_chain_context(rng)
+        shipment_id = f"SHP{rng.randint(100_000,999_999)}"
+        planned_depart = timestamp - timedelta(hours=rng.randint(1, 12))
+        planned_arrive = planned_depart + timedelta(hours=rng.randint(2, 9))
+        (customs_flag, customs_dur, weather_flag, weather_dur,
+         traffic_flag, traffic_dur, loading_flag, loading_dur) = generate_delay_events(
+            rng, hour, weather, traffic)
+        delay_min = customs_dur + weather_dur + traffic_dur + loading_dur
+        actual_depart = planned_depart + timedelta(minutes=loading_dur)
+        actual_arrive = planned_arrive + timedelta(minutes=delay_min)
+        eta_pred_min = int((actual_arrive - actual_depart).total_seconds() // 60)
+        late_cost = 0
+        status = "in_transit"
+        if delay_min > 30:
+            status = "late"
+            late_cost = round(25 + (delay_min * rng.uniform(0.7, 3.2)), 2)
+        if rng.random() < 0.01:
+            status = "exception"
+
+        
         records.append({
             # --- Identifiers ---
             'vehicle_id': vehicle_id,
@@ -373,11 +387,36 @@ def generate_fleet_data(num_records: int = 100_000,
             'route_id': f"RTE{rng.randint(100, 999)}",
             'timestamp': timestamp,
 
+            # --- Supply chain new columns ---
+            'shipment_id': shipment_id,
+            'carrier_name': carrier,
+            'warehouse_origin': origin,
+            'warehouse_destination': dest,
+            'supplier_id': supplier_id,
+            'supplier_region': supplier_region,
+            'carrier_service_level': carrier_service,
+            'planned_departure_time': planned_depart,
+            'actual_departure_time': actual_depart,
+            'planned_arrival_time': planned_arrive,
+            'actual_arrival_time': actual_arrive,
+            'eta_minutes': eta_pred_min,
+            'delay_minutes': delay_min,
+            'customs_hold_flag': customs_flag,
+            'customs_hold_duration_min': customs_dur,
+            'weather_delay_flag': weather_flag,
+            'weather_delay_minutes': weather_dur,
+            'traffic_delay_flag': traffic_flag,
+            'traffic_delay_minutes': traffic_dur,
+            'loading_delay_flag': loading_flag,
+            'loading_delay_minutes': loading_dur,
+            'shipment_status': status,
+            'late_shipment_cost_usd': late_cost,
+
             # --- Context ---
             'latitude': lat,
             'longitude': lon,
             'hour_of_day': hour,
-            'weather': weather,
+            'trip_weather': weather,
             'road_type': road_type,
             'traffic_density': traffic,
             'rush_hour': rush_hour,
@@ -472,11 +511,36 @@ def create_table_if_not_exists(conn, table_name='fleet_data'):
         route_id VARCHAR(20),
         timestamp TIMESTAMP,
 
+        -- SUPPLY CHAIN EXTENSIONS
+        shipment_id VARCHAR(30),
+        carrier_name VARCHAR(50),
+        warehouse_origin VARCHAR(40),
+        warehouse_destination VARCHAR(40),
+        supplier_id VARCHAR(30),
+        supplier_region VARCHAR(40),
+        carrier_service_level VARCHAR(30),
+        planned_departure_time TIMESTAMP,
+        actual_departure_time TIMESTAMP,
+        planned_arrival_time TIMESTAMP,
+        actual_arrival_time TIMESTAMP,
+        eta_minutes SMALLINT,
+        delay_minutes SMALLINT,
+        customs_hold_flag BOOLEAN,
+        customs_hold_duration_min SMALLINT,
+        weather_delay_flag BOOLEAN,
+        weather_delay_minutes SMALLINT,
+        traffic_delay_flag BOOLEAN,
+        traffic_delay_minutes SMALLINT,
+        loading_delay_flag BOOLEAN,
+        loading_delay_minutes SMALLINT,
+        shipment_status VARCHAR(20),
+        late_shipment_cost_usd FLOAT,
+
         -- Context
         latitude FLOAT,
         longitude FLOAT,
         hour_of_day SMALLINT,
-        weather VARCHAR(20),
+        trip_weather VARCHAR(20),
         road_type VARCHAR(20),
         traffic_density VARCHAR(20),
         rush_hour BOOLEAN,
@@ -561,6 +625,10 @@ def main():
     print("Generating realistic synthetic fleet data...")
     df = generate_fleet_data(num_records=100000, fleet_size=500, driver_pool=400)
     print("Generated dataset with", len(df), "records")
+    
+    print("Number of columns:", len(df.columns), flush=True)
+    print("Columns:", df.columns.tolist(), flush=True)
+
 
     # Optional quick sanity checks (comment out if not needed)
     print("Event rates (sample):")
