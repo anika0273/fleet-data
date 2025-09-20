@@ -110,14 +110,33 @@ def clean_and_transform(df):
     df_clean = df_clean.withColumn("fuel_consumption_liters", col("fuel_consumption_liters").cast("double"))
     df_clean = df_clean.withColumn("downtime_hours", col("downtime_hours").cast("double"))
 
+    # Cast supply chain delay columns
+    delay_numeric_cols = [
+        "delay_minutes", "customs_hold_duration_min", "weather_delay_minutes",
+        "traffic_delay_minutes", "loading_delay_minutes", "late_shipment_cost_usd", "eta_minutes"
+    ]
+    for col_name in delay_numeric_cols:
+        if col_name in df_clean.columns:
+            df_clean = df_clean.withColumn(col_name, col(col_name).cast("double"))
+    
+
     # Remove impossible values
     df_clean = df_clean.filter((col("sensor_battery") >= 0) & (col("sensor_battery") <= 100))
     df_clean = df_clean.filter((col("speed") >= 0) & (col("speed") <= 160))
     df_clean = df_clean.filter((col("fuel_consumption_liters") >= 0) | col("fuel_consumption_liters").isNull())
     df_clean = df_clean.filter((col("downtime_hours") >= 0) | col("downtime_hours").isNull())
 
+    # Remove invalid or negative delays (some could be zero or null if no delay)
+    for delay_col in delay_numeric_cols:
+        if delay_col in df_clean.columns:
+            df_clean = df_clean.filter(
+                (col(delay_col) >= 0) | col(delay_col).isNull()
+            )
+
     # Normalize categorical fields
-    for c in ["weather", "road_type", "traffic_density", "driver_training"]:
+    categorical_cols = [
+        "trip_weather", "road_type", "traffic_density", "driver_training",  "shipment_status", "carrier_name", "warehouse_origin", "warehouse_destination", "carrier_service_level", "supplier_region"]
+    for c in categorical_cols:
         if c in df_clean.columns:
             df_clean = df_clean.withColumn(c, lower(col(c)))
 
@@ -135,14 +154,30 @@ def clean_and_transform(df):
     )
 
     # Derived feature: fuel efficiency (L/km)
-    if "distance_traveled_km" in df_clean.columns:
+    if "distance_traveled_km" in df_clean.columns and "fuel_consumption_liters" in df_clean.columns:
         df_clean = df_clean.withColumn(
             "fuel_efficiency_l_per_km",
-            spark_round(col("fuel_consumption_liters") / col("distance_traveled_km"), 2)
+            spark_round(col("fuel_consumption_liters") / col("distance_traveled_km"), 3)
         )
 
     # Derived feature: downtime_flag
     df_clean = df_clean.withColumn("downtime_flag", when(col("downtime_hours") > 0, 1).otherwise(0))
+
+    # --- New supply chain analytics features ---
+    # Binary late shipment flag (delay > 30 mins)
+    if "delay_minutes" in df_clean.columns:
+        df_clean = df_clean.withColumn("late_shipment_flag", when(col("delay_minutes") > 30, 1).otherwise(0))
+    
+    # Delay severity category for segmentation
+    if "delay_minutes" in df_clean.columns:
+        df_clean = df_clean.withColumn(
+            "delay_severity",
+            when(col("delay_minutes") == 0, "none")
+            .when((col("delay_minutes") > 0) & (col("delay_minutes") <= 30), "low")
+            .when((col("delay_minutes") > 30) & (col("delay_minutes") <= 90), "medium")
+            .when(col("delay_minutes") > 90, "high")
+            .otherwise("unknown")
+        )
 
     return df_clean
 
@@ -155,12 +190,21 @@ def aggregate_metrics(df):
     - Event counts
     - Average speed, battery, fuel efficiency
     """
-    return df.groupBy("event_type").agg(
+    agg_exprs = [
         count("*").alias("event_count"),
         avg("speed").alias("avg_speed"),
         avg("sensor_battery").alias("avg_battery"),
-        avg("fuel_efficiency_l_per_km").alias("avg_fuel_efficiency")
-    )
+        avg("fuel_efficiency_l_per_km").alias("avg_fuel_efficiency"),
+    ]
+    
+    # Include supply chain metrics if present
+    if "late_shipment_flag" in df.columns:
+        agg_exprs.append(avg("late_shipment_flag").alias("pct_late_shipments"))
+    if "delay_minutes" in df.columns:
+        agg_exprs.append(avg("delay_minutes").alias("avg_delay_minutes"))
+
+
+    return df.groupBy("event_type").agg(*agg_exprs)
 
 
 # -----------------------
