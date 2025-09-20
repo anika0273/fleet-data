@@ -19,3 +19,4 @@ docker-compose.kafka.yml
 docker-compose.monitoring.yml
 test.sql
 requirements.txt
+:wq
