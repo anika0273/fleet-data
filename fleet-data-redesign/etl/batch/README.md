@@ -1,17 +1,64 @@
-# Batch ETL Pipeline for Fleet Telemetry Data (PySpark + PostgreSQL)
+# Batch ETL Pipeline for Fleet and Supply Chain Analytics
 
-This project implements a **Batch ETL (Extract, Transform, Load) pipeline** using PySpark, designed to clean, normalize, aggregate, and persist synthetic fleet vehicle telemetry data. Output is written both to a PostgreSQL database for BI/analytics and as Parquet files for data science workflows. This ETL approach is scalable, reproducible, and highly documented for new contributors.
+## Overview
 
----
+This batch ETL pipeline processes synthetic fleet telemetry and supply chain data to produce clean, enriched, and aggregated datasets suitable for downstream analytics, reporting, and machine learning.
 
-## Project Structure
+It handles large data volumes by running periodic jobs that extract raw data, apply cleaning and complex transformations, calculate derived features, aggregate key metrics, and then load results back into PostgreSQL and Parquet files.
 
-batch_etl/
-│
-├─ batch_etl.py # Main ETL script
-├─ utils.py # Helper functions (Spark session, JDBC config)
-└─ lib/
-└─ postgresql-42.7.3.jar # JDBC driver required for Spark↔Postgres connectivity
+## Purpose
+
+- Prepare historical data to answer strategic questions such as:
+  - Impact of driver behavior interventions.
+  - Effectiveness of route optimization.
+  - Benefits of predictive maintenance.
+  - Evaluating different telematics device generations.
+  - Detailed shipment delay and ETA prediction analytics.
+
+## Architecture & Workflow
+
+1. **Extract**:
+
+   - Connect to PostgreSQL database.
+   - Load raw records with pre-filters applied (e.g., valid GPS coordinates, realistic speed and battery values).
+
+2. **Transform**:
+
+   - Cast data types for consistency.
+   - Clean invalid or outlier data.
+   - Normalize categorical fields.
+   - Generate derived features like:
+     - Hour of day (`hour_of_day`).
+     - Vehicle age groups (`vehicle_age_group`).
+     - Fuel efficiency (`fuel_efficiency_l_per_km`).
+     - Downtime flags (`downtime_flag`).
+     - Shipment delay severity and late shipment indicators.
+   - Prepare data for analytics and ML consumption.
+
+3. **Aggregate**:
+
+   - Calculate counts of safety events.
+   - Compute average metrics like speed, battery, fuel efficiency.
+   - Summarize shipment delay statistics for performance monitoring.
+
+4. **Load**:
+   - Overwrite a clean table in PostgreSQL (`fleet_data_clean`).
+   - Save cleaned data as Parquet files for scalable analytics.
+
+## Key Notes
+
+- Runs as a scheduled or manual batch job.
+- Uses Apache Spark for scalability and speed on bulk data.
+- Exposes Prometheus metrics for monitoring ETL performance.
+- Transformation is comprehensive to support rich business questions and ML feature generation.
+
+## How to Run
+
+- Use the provided Docker Compose service or run locally via:
+
+`bash
+docker compose run --rm batch_etl python -m etl.batch.batch_etl
+`
 
 ---
 
