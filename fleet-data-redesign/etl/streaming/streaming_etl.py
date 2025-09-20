@@ -188,6 +188,9 @@ def define_schema():
         StructField("fuel_efficiency_l_per_km", DoubleType())
     ])
 
+# -----------------------------
+# Main streaming ETL function
+# -----------------------------
 def main():
     # Ensure the target postgres table exists before streaming starts
     create_table_if_not_exists()
@@ -195,6 +198,7 @@ def main():
     spark = get_spark_session()
     schema = define_schema()
     
+    # Read from Kafka
     kafka_stream = spark.readStream \
         .format("kafka") \
         .option("kafka.bootstrap.servers", KAFKA_BROKERS) \
@@ -203,17 +207,26 @@ def main():
         .option("failOnDataLoss", "false") \
         .load()
 
+    # Parse the JSON messages and extract fields
     string_df = kafka_stream.selectExpr("CAST(value AS STRING)")
-
     fleet_df = string_df.select(from_json(col("value"), schema).alias("data")).select("data.*")
 
+    # Lightweight Data cleaning and transformations
+    #    a. Calculate real-time fuel efficiency (for dashboarding/alerting).
     fleet_df = fleet_df.withColumn(
         "fuel_efficiency_l_per_km",
         spark_round(col("fuel_consumption_liters") / col("distance_traveled_km"), 3)
     )
-
+    #    b. Optional: add streaming late shipment flag for real-time alerting
+    if "delay_minutes" in fleet_df.columns:
+        fleet_df = fleet_df.withColumn(
+            "late_shipment_flag",
+            when(col("delay_minutes") > 30, 1).otherwise(0)
+        )
+    #    c. Filter: Only keep records with valid (nonzero) speed
     filtered_df = fleet_df.filter(col("speed") > 0)
 
+    # Write to Postgres using foreachBatch for exactly-once semantics
     pg_url = f"jdbc:postgresql://postgres:5432/fleet_db"
     pg_properties = {
         "user": "postgres",
