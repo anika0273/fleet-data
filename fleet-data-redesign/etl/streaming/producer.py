@@ -32,7 +32,7 @@ def json_serializer(data):
 # -----------------------------
 # Kafka Producer function
 # -----------------------------
-def produce_stream(num_records=1000, batch_size=10, delay=1):
+def produce_stream(num_records=1000, batch_size=10, delay=1): # Every 1 sec, send 10 records
     brokers = os.getenv("KAFKA_BROKERS", "localhost:9092")  # host default
     print(f"[producer] bootstrap_servers = {brokers}")
     producer = KafkaProducer(

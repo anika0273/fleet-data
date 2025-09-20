@@ -80,6 +80,21 @@
 - They complement each other: streaming ETL handles event-level freshness, batch ETL handles heavy aggregations and historical context.
 - Both often source from the same raw data, stored in staging or event logs, but process on different cadences.
 
+# Will Batch ETL and Streaming ETL Do the Same Transformations?
+
+_No — and that’s intentional._
+
+- Streaming ETL:
+  Should perform basic filtering, validation, and simple transformations needed for real-time monitoring, alerts, and raw-insert use.
+
+  Examples: filter on speed > 0, compute simple fields like fuel efficiency, flag risky/late events for streaming dashboards.
+
+- Batch ETL:
+  Handles deep cleaning, enrichment, complicated derived features, historical aggregations, windowed stats, ML feature pipelines, and data quality/population-wide anomaly checks.
+
+- Purpose:
+  To keep streaming pipelines fast and robust while reserving heavier analytics for batch mode. Batch ETL responds to complex questions ("How did A/B test behave over a month?") while streaming supports "Who is at risk or late right now?"
+
 # Typical End-to-End Scenario
 
 1. Data generation/source: Telemetry devices, sensors, or synthetic generators produce raw event data.
