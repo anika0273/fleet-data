@@ -1,6 +1,7 @@
 # etl/streaming/streaming_etl.py
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col, round as spark_round
+from pyspark.sql.functions import when
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, BooleanType, IntegerType, TimestampType
 import os
 import psycopg2
@@ -82,7 +83,8 @@ def create_table_if_not_exists():
         maintenance_cost_usd DOUBLE PRECISION,
         intervention_active BOOLEAN,
         risk_label BOOLEAN,
-        fuel_efficiency_l_per_km DOUBLE PRECISION
+        fuel_efficiency_l_per_km DOUBLE PRECISION,
+        late_shipment_flag INTEGER
     );
     """
     conn = None
@@ -185,7 +187,8 @@ def define_schema():
         StructField("maintenance_cost_usd", DoubleType()),
         StructField("intervention_active", BooleanType()),
         StructField("risk_label", BooleanType()),
-        StructField("fuel_efficiency_l_per_km", DoubleType())
+        StructField("fuel_efficiency_l_per_km", DoubleType()),
+        StructField("late_shipment_flag", IntegerType())
     ])
 
 # -----------------------------
