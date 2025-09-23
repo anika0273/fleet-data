@@ -22,6 +22,25 @@ services:
       timeout: 5s
       retries: 5
 
+  jupyter:
+    image: jupyter/base-notebook:latest
+    container_name: fleet-data-jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./config:/home/jovyan/config
+      - ./etl:/home/jovyan/etl
+      - ./data_generation:/home/jovyan/data_generation
+      - ./analysis:/home/jovyan/analysis
+      - ./outputs:/home/jovyan/outputs
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+    command: start-notebook.sh --NotebookApp.token='' --NotebookApp.ip='0.0.0.0' --NotebookApp.allow_origin='*' --NotebookApp.base_url='/'
+    depends_on:
+      - postgres
+    networks:
+      - fleetnet
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.4
     container_name: fleet-data-zookeeper
@@ -444,8 +463,7 @@ services:
     networks:
       - fleetnet
 
-networks:
-  fleetnet:
+networks: fleetnet:s
 
 volumes:
   pgdata:
